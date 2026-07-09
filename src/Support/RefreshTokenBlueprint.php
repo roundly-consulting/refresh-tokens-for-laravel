@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 
 /**
  * The canonical column set for the refresh-tokens table. Kept in one place so a
- * host adoption migration (e.g. cosmos-auth transforming an existing table) can
+ * host adoption migration (e.g. transforming an existing tokens table) can
  * reproduce the exact shape without duplicating the definition.
  */
 final class RefreshTokenBlueprint
