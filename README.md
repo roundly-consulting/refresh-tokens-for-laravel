@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://roundly-consulting.com/open-source">
+    <img src="art/hero.png" alt="Refresh Tokens For Laravel — Roundly open source" width="100%">
+  </a>
+</p>
+
 # Refresh Tokens for Laravel
 
 Opaque, rotating **refresh tokens** and **device sessions** for Laravel — SHA-256 at rest,
