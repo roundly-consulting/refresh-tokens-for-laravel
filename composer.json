@@ -1,0 +1,87 @@
+{
+    "name": "roundly-consulting/refresh-tokens-for-laravel",
+    "description": "Opaque, rotating refresh tokens and device sessions for Laravel — SHA-256 at rest, atomic anti-double-spend rotation, family revocation on reuse. Zero third-party runtime deps.",
+    "keywords": [
+        "roundly-consulting",
+        "laravel",
+        "refresh-token",
+        "rotation",
+        "sessions",
+        "auth",
+        "security"
+    ],
+    "homepage": "https://github.com/roundly-consulting/refresh-tokens-for-laravel",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Andrej Mihaliak",
+            "email": "andrej@mihaliak.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "illuminate/console": "^12.0|^13.0",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/database": "^12.0|^13.0",
+        "illuminate/http": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "roundly-consulting/enums-for-laravel": "@dev"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.0",
+        "nunomaduro/collision": "^8.0",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^4.0"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../enums-for-laravel*",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/roundly-consulting/enums-for-laravel",
+            "no-api": true
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "RoundlyConsulting\\RefreshTokens\\": "src/",
+            "RoundlyConsulting\\RefreshTokens\\Database\\Factories\\": "database/factories/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "RoundlyConsulting\\RefreshTokens\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "format": "vendor/bin/pint",
+        "analyse": "vendor/bin/phpstan analyse --no-progress",
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage --min=90"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "RoundlyConsulting\\RefreshTokens\\RefreshTokensServiceProvider"
+            ],
+            "aliases": {
+                "RefreshToken": "RoundlyConsulting\\RefreshTokens\\Facades\\RefreshToken"
+            }
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

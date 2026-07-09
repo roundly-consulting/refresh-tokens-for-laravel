@@ -1,0 +1,13 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+parameters:
+    level: 7
+    paths:
+        - src
+        - database
+        - config
+        # Analysed so the consumer-facing HasRefreshTokens trait has a concrete user.
+        - tests/Fixtures/User.php
+    # This package ships its own config/ dir; env() is correct there.
+    configDirectories:
+        - config
