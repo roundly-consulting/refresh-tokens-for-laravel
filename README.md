@@ -70,6 +70,28 @@ nothing against a secret that can't be brute-forced and would break the indexed 
 lookup rotation relies on. Set `hash.key` to layer an HMAC pepper on top for defence-in-depth if
 a database dump leaks.
 
+### Pepper (defence-in-depth)
+
+By default tokens are stored as a plain SHA-256 digest. Set `hash.key` (env
+`REFRESH_TOKENS_HASH_KEY`) to a high-entropy secret and the at-rest digest becomes
+`hash_hmac('sha256', $plain, $key)` instead — a single deterministic value under the same unique
+index, so the lookup and the atomic-claim mutex are unchanged. What it buys you: an attacker who
+exfiltrates the database table but **not** the application secret cannot verify or brute-force any
+token, even a weak one.
+
+```dotenv
+REFRESH_TOKENS_HASH_KEY=base64:your-high-entropy-secret
+```
+
+Keep the pepper outside the database (env / secrets manager) and treat it like `APP_KEY`. A
+missing or whitespace-only value means "no pepper" (plain SHA-256).
+
+**Caveat — changing `hash.key` invalidates existing tokens.** The pepper participates in the
+digest, so setting, rotating, or clearing it makes every previously stored digest stop matching;
+holders must re-authenticate. This is expected. The package does **not** ship online pepper
+rotation (accepting old and new peppers at once) — pick a pepper up front, or plan a re-login
+window when you change it.
+
 ## Usage
 
 All examples use the `RefreshToken` facade
@@ -156,6 +178,35 @@ $user->refreshTokens();  // HasMany, all tokens
 $user->sessions();       // HasMany, active tokens only
 ```
 
+The trait also adds `$user->…()` verbs that read as the user acting on itself:
+
+```php
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
+
+$new = $user->issueRefreshToken(new IssueContext(accessReference: $access->jti));
+$user->revokeAllSessions();                 // = RefreshToken::revokeAllFor($user); returns count
+$user->revokeOtherSessions($currentAccess->jti); // keep current, revoke the rest; returns count
+```
+
+### Log out everywhere on a password change
+
+The canonical reaction to a credential change is to revoke every session. Wire it from your
+change-password flow, or from a model observer when the password attribute is dirty — the package
+ships the verb but never hooks your User model for you:
+
+```php
+// In a change-password action:
+$user->update(['password' => Hash::make($newPassword)]);
+$user->revokeAllSessions();
+
+// …or via a saved observer:
+User::saved(function (User $user): void {
+    if ($user->wasChanged('password')) {
+        $user->revokeAllSessions();
+    }
+});
+```
+
 ### Binding the access-token revoker
 
 By default the package ships a no-op `AccessTokenRevoker`, so it works standalone. Bind your own
@@ -185,21 +236,33 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\DeviceData;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\LocationData;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 
-RefreshToken::enrich($sessionId,
+// Pass the RefreshToken model you already hold, or its id:
+RefreshToken::enrich($new->token,
     new DeviceData(browser: 'Firefox', os: 'Linux', deviceType: DeviceType::Desktop, isBot: false),
     new LocationData(country: 'Slovakia', city: 'Bratislava', countryCode: 'SK', ipAddress: '203.0.113.9'),
 );
 ```
 
-`enrich()` only ever writes device/geo columns — never the auth columns.
+`enrich()` accepts the `RefreshToken` model, an int, or a string key. **Write semantics:** it only
+ever touches device/geo columns — never the auth columns. The six device columns are **always
+overwritten** (an absent `DeviceData` field nulls its column), while the location columns are
+written **only when a `LocationData` is supplied** — so a later device-only enrich never clobbers
+previously stored geo.
 
 ### Events
 
 Hook these on the host side; they carry ids/scalars only (never the model or plaintext):
 
 - `RefreshTokenIssued(int|string $tokenId)` — trigger async device/geo enrichment.
+- `RefreshTokenRedeemed(int|string $tokenId, string $familyId, int|string $userId)` — a token was
+  legitimately spent (rotated); hook it to audit rotations or meter session churn.
 - `SessionRevoked(int|string $tokenId, ?string $accessReference)`.
-- `RefreshTokenReuseDetected(string $familyId, int|string $userId)` — theft signal for alerting.
+- `RefreshTokenReuseDetected(string $familyId, int|string $userId, int $revokedCount)` — theft
+  signal for alerting; `revokedCount` reports how many live family members were revoked in
+  response.
+
+`rotate()` fires one `RefreshTokenRedeemed` (for the spent token) **and** one `RefreshTokenIssued`
+(for the replacement).
 
 ### Pruning
 
@@ -228,6 +291,29 @@ Intentionally host-owned (not this package): JWT minting/verification, jti denyl
 user-agent parsing, IP geolocation, HTTP routes/controllers, throttling, and cookie transport.
 
 ## Testing
+
+Assert your access-token revocation with the shipped `FakeAccessTokenRevoker` — bind it in place
+of your real revoker and assert exactly which access references the package asked to deny, no
+hand-rolled spy required:
+
+```php
+use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
+use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
+
+$fake = new FakeAccessTokenRevoker();
+$this->app->instance(AccessTokenRevoker::class, $fake);
+
+// … exercise reuse detection / session revocation …
+
+$fake->assertRevoked($jti);
+$fake->assertNotRevoked($otherJti);
+$fake->assertRevokedCount(2);
+$fake->assertNothingRevoked();   // when nothing should have been denied
+```
+
+Its assertions throw a package exception (not a PHPUnit assertion), so it works under any runner.
+
+Run the package's own suite with:
 
 ```bash
 composer test
