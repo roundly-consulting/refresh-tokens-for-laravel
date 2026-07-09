@@ -2,19 +2,22 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenReuseDetected;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
-use RoundlyConsulting\RefreshTokens\Tests\Fixtures\SpyAccessTokenRevoker;
+use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 beforeEach(function (): void {
-    $this->spy = new SpyAccessTokenRevoker;
-    $this->app->instance(AccessTokenRevoker::class, $this->spy);
+    $this->revoker = new FakeAccessTokenRevoker;
+    $this->app->instance(AccessTokenRevoker::class, $this->revoker);
 });
+
+afterEach(fn () => Carbon::setTestNow());
 
 it('revokes the whole family and fires the signal when a rotated token is reused', function (): void {
     Event::fake([RefreshTokenReuseDetected::class]);
@@ -32,12 +35,15 @@ it('revokes the whole family and fires the signal when a rotated token is reused
         ->and($b->revoked_reason)->toBe(RevocationReason::ReuseDetected);
 
     // The host callback denied B's access reference exactly once.
-    expect($this->spy->revoked)->toBe(['acc-b']);
+    $this->revoker->assertRevoked('acc-b');
+    $this->revoker->assertRevokedCount(1);
 
     Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
     Event::assertDispatched(
         RefreshTokenReuseDetected::class,
-        fn (RefreshTokenReuseDetected $e): bool => $e->familyId === $a->token->family_id && $e->userId === $user->id,
+        fn (RefreshTokenReuseDetected $e): bool => $e->familyId === $a->token->family_id
+            && $e->userId === $user->id
+            && $e->revokedCount === 1,
     );
 });
 
@@ -52,8 +58,32 @@ it('treats a re-presented token as benign within the grace window', function ():
     expect(RefreshToken::redeem($a->plainText))->toBeNull();
 
     // Within grace: replacement B untouched, no denial, no event.
-    expect($rotation->newRefreshToken->token->fresh()->revoked_at)->toBeNull()
-        ->and($this->spy->revoked)->toBe([]);
+    expect($rotation->newRefreshToken->token->fresh()->revoked_at)->toBeNull();
+    $this->revoker->assertNothingRevoked();
 
     Event::assertNotDispatched(RefreshTokenReuseDetected::class);
+});
+
+it('stays benign exactly at the grace boundary and turns to reuse just past it', function (): void {
+    config()->set('refresh-tokens.rotation.grace', 30);
+    Event::fake([RefreshTokenReuseDetected::class]);
+    $user = User::factory()->create();
+
+    // Freeze on a whole second so the stored (second-precision) revoked_at and the
+    // in-memory clock agree exactly at the grace boundary.
+    Carbon::setTestNow(now()->startOfSecond());
+    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+
+    // Exactly at the boundary (revoked_at + grace): still benign.
+    Carbon::setTestNow(now()->addSeconds(30));
+    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    $this->revoker->assertNothingRevoked();
+    Event::assertNotDispatched(RefreshTokenReuseDetected::class);
+
+    // One second past the boundary: reuse.
+    Carbon::setTestNow(now()->addSeconds(1));
+    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    $this->revoker->assertRevoked('acc-b');
+    Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
 });

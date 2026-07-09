@@ -9,11 +9,11 @@ use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\SessionRevoked;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
-use RoundlyConsulting\RefreshTokens\Tests\Fixtures\SpyAccessTokenRevoker;
+use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 beforeEach(function (): void {
-    $this->spy = new SpyAccessTokenRevoker;
+    $this->spy = new FakeAccessTokenRevoker;
     $this->app->instance(AccessTokenRevoker::class, $this->spy);
 });
 

@@ -64,6 +64,39 @@ it('enriches device-only when no location is supplied', function (): void {
         ->and($session->fresh()->country)->toBeNull();
 });
 
+it('accepts the model directly and equals enrich-by-id', function (): void {
+    $user = User::factory()->create();
+    $session = RefreshTokenModel::factory()->forUser($user)->create();
+
+    RefreshToken::enrich($session, new DeviceData(browser: 'Safari', deviceType: DeviceType::Tablet));
+
+    expect($session->fresh()->browser)->toBe('Safari')
+        ->and($session->fresh()->device_type)->toBe(DeviceType::Tablet);
+});
+
+it('preserves stored geo when a later enrich is device-only', function (): void {
+    $user = User::factory()->create();
+    $session = RefreshTokenModel::factory()->forUser($user)->create();
+
+    // First enrich writes geo.
+    RefreshToken::enrich($session, new DeviceData(browser: 'Chrome'), new LocationData(
+        country: 'Slovakia',
+        city: 'Kosice',
+        countryCode: 'SK',
+        ipAddress: '203.0.113.5',
+    ));
+
+    // Second enrich is device-only: geo must survive untouched.
+    RefreshToken::enrich($session, new DeviceData(browser: 'Chrome', os: 'macOS'));
+
+    $fresh = $session->fresh();
+    expect($fresh->os)->toBe('macOS')
+        ->and($fresh->country)->toBe('Slovakia')
+        ->and($fresh->city)->toBe('Kosice')
+        ->and($fresh->country_code)->toBe('SK')
+        ->and($fresh->ip_address)->toBe('203.0.113.5');
+});
+
 it('throws when enriching an unknown session id', function (): void {
     RefreshToken::enrich(999999, new DeviceData);
 })->throws(SessionNotFoundException::class);
