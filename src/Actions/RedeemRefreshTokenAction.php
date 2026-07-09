@@ -6,8 +6,10 @@ namespace RoundlyConsulting\RefreshTokens\Actions;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
+use RoundlyConsulting\RefreshTokens\Events\RefreshTokenRedeemed;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 use SensitiveParameter;
@@ -78,9 +80,14 @@ final class RedeemRefreshTokenAction
 
         $user = $row->owner;
 
+        // The row was claimed but its owner is gone (e.g. the user was deleted after
+        // issue). The token stays revoked; there is nothing to hand back and no
+        // successful-redeem signal to emit.
         if (! $user instanceof Authenticatable) {
             return null;
         }
+
+        Event::dispatch(new RefreshTokenRedeemed($row->getKey(), $row->family_id, $user->getAuthIdentifier()));
 
         return new RedemptionResult($user, $row->family_id, $row);
     }

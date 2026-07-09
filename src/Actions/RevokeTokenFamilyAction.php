@@ -58,6 +58,7 @@ final class RevokeTokenFamilyAction
         Event::dispatch(new RefreshTokenReuseDetected(
             $token->family_id,
             $token->getAttribute(TokenModel::foreignKey()),
+            $revoked,
         ));
 
         return $revoked;
