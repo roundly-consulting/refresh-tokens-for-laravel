@@ -17,7 +17,7 @@ use RoundlyConsulting\RefreshTokens\RefreshTokens;
  * @method static \Illuminate\Support\Collection<int, \RoundlyConsulting\RefreshTokens\Models\RefreshToken> listFor(\Illuminate\Contracts\Auth\Authenticatable $user)
  * @method static int revokeOthers(\Illuminate\Contracts\Auth\Authenticatable $user, ?string $currentAccessReference)
  * @method static int revokeAll(\Illuminate\Contracts\Auth\Authenticatable $user)
- * @method static void enrich(int|string $sessionId, \RoundlyConsulting\RefreshTokens\DataTransferObjects\DeviceData $device, ?\RoundlyConsulting\RefreshTokens\DataTransferObjects\LocationData $location = null)
+ * @method static void enrich(\RoundlyConsulting\RefreshTokens\Models\RefreshToken|int|string $session, \RoundlyConsulting\RefreshTokens\DataTransferObjects\DeviceData $device, ?\RoundlyConsulting\RefreshTokens\DataTransferObjects\LocationData $location = null)
  *
  * @see RefreshTokens
  */

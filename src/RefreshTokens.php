@@ -123,8 +123,8 @@ final class RefreshTokens implements RefreshTokenManager, SessionManager
         return $this->revokeAllFor($user);
     }
 
-    public function enrich(int|string $sessionId, DeviceData $device, ?LocationData $location = null): void
+    public function enrich(RefreshToken|int|string $session, DeviceData $device, ?LocationData $location = null): void
     {
-        $this->app->make(EnrichSessionAction::class)->execute($sessionId, $device, $location);
+        $this->app->make(EnrichSessionAction::class)->execute($session, $device, $location);
     }
 }

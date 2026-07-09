@@ -28,6 +28,10 @@ interface SessionManager
     /** Revoke every active session for the user (= revokeOthers with no current reference). */
     public function revokeAll(Authenticatable $user): int;
 
-    /** Write device/geo columns onto a session; never touches auth columns. */
-    public function enrich(int|string $sessionId, DeviceData $device, ?LocationData $location = null): void;
+    /**
+     * Write device/geo columns onto a session (by model or by key); never touches
+     * auth columns. Device columns are always overwritten (an absent field nulls its
+     * column); location columns are written only when a $location is supplied.
+     */
+    public function enrich(RefreshToken|int|string $session, DeviceData $device, ?LocationData $location = null): void;
 }
