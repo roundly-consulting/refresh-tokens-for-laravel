@@ -55,6 +55,8 @@ final class TokenHasher
     {
         $key = config('refresh-tokens.hash.key');
 
-        return is_string($key) && $key !== '' ? $key : null;
+        // A missing, empty, or whitespace-only key means "no pepper" — fall back to a
+        // plain hash. A real pepper is used verbatim (never trimmed).
+        return is_string($key) && trim($key) !== '' ? $key : null;
     }
 }

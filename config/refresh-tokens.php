@@ -18,7 +18,11 @@ return [
     // Hashing at rest. SHA-256 by default: the secret already carries ~380 bits of entropy,
     // so a fast, indexed-equality-friendly hash is correct — a slow password hash would add
     // nothing and break the unique-index lookup. Set `hash.key` to opt into an HMAC pepper
-    // (defence-in-depth if a DB dump leaks); left unset it is plain SHA-256.
+    // (defence-in-depth if a DB dump leaks); left unset (or whitespace-only) it is plain SHA-256.
+    //
+    // CAVEAT: `hash.key` participates in the at-rest digest, so changing it (setting, rotating,
+    // or clearing) invalidates every existing token — their stored digest no longer matches, so
+    // holders must re-authenticate. Treat it as a high-entropy secret kept outside the database.
     'hash' => [
         'algo' => env('REFRESH_TOKENS_HASH_ALGO', 'sha256'),
         'key' => env('REFRESH_TOKENS_HASH_KEY'), // optional HMAC pepper; null = plain hash
