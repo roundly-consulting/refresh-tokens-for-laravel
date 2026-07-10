@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Support;
 
 use Illuminate\Support\Str;
+use RoundlyConsulting\RefreshTokens\Enums\HashAlgorithm;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use SensitiveParameter;
 
 /**
@@ -15,6 +17,12 @@ use SensitiveParameter;
  */
 final class TokenHasher
 {
+    /**
+     * The shortest plaintext (Str::random chars) the package will mint. Below this
+     * a token is brute-forceable; a misconfiguration must fail loudly, not silently.
+     */
+    public const int MINIMUM_TOKEN_LENGTH = 32;
+
     /**
      * Generate a fresh high-entropy plaintext secret.
      */
@@ -29,7 +37,7 @@ final class TokenHasher
      */
     public function hash(#[SensitiveParameter] string $plain): string
     {
-        $algo = $this->algo();
+        $algo = $this->algo()->value;
         $key = $this->key();
 
         return $key === null
@@ -37,18 +45,33 @@ final class TokenHasher
             : hash_hmac($algo, $plain, $key);
     }
 
+    /**
+     * @throws InvalidTokenConfigurationException when configured below the minimum
+     */
     private function length(): int
     {
         $length = config('refresh-tokens.token_length', 64);
+        $length = is_int($length) ? $length : 64;
 
-        return is_int($length) && $length > 0 ? $length : 64;
+        if ($length < self::MINIMUM_TOKEN_LENGTH) {
+            throw InvalidTokenConfigurationException::tokenLengthTooShort($length, self::MINIMUM_TOKEN_LENGTH);
+        }
+
+        return $length;
     }
 
-    private function algo(): string
+    /**
+     * @throws InvalidTokenConfigurationException on an algorithm outside the allowlist
+     */
+    private function algo(): HashAlgorithm
     {
         $algo = config('refresh-tokens.hash.algo', 'sha256');
+        $algo = is_string($algo) && $algo !== '' ? $algo : 'sha256';
 
-        return is_string($algo) && $algo !== '' ? $algo : 'sha256';
+        return HashAlgorithm::tryFrom($algo) ?? throw InvalidTokenConfigurationException::unsupportedAlgorithm(
+            $algo,
+            array_map(static fn (HashAlgorithm $case): string => $case->value, HashAlgorithm::cases()),
+        );
     }
 
     private function key(): ?string

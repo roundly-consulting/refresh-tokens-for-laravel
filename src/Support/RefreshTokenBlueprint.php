@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Support;
 
 use Illuminate\Database\Schema\Blueprint;
+use RoundlyConsulting\RefreshTokens\Enums\UserKeyType;
 
 /**
  * The canonical column set for the refresh-tokens table. Kept in one place so a
@@ -13,13 +14,16 @@ use Illuminate\Database\Schema\Blueprint;
  */
 final class RefreshTokenBlueprint
 {
-    public static function columns(Blueprint $table, string $foreignKey = 'user_id'): void
-    {
+    public static function columns(
+        Blueprint $table,
+        string $foreignKey = 'user_id',
+        UserKeyType $keyType = UserKeyType::Id,
+    ): void {
         $table->id();
-        $table->unsignedBigInteger($foreignKey)->index();
+        $keyType->foreignColumn($table, $foreignKey);
 
-        // Auth / rotation core.
-        $table->string('token_hash', 64)->unique();
+        // Auth / rotation core. 128 chars fits the widest allowed digest (sha512 hex).
+        $table->string('token_hash', 128)->unique();
         $table->uuid('family_id')->index();
         $table->string('access_reference', 64)->nullable()->index();
 
@@ -41,7 +45,7 @@ final class RefreshTokenBlueprint
         // Lifecycle.
         $table->string('revoked_reason')->nullable();
         $table->timestamp('expires_at')->index();
-        $table->timestamp('revoked_at')->nullable();
+        $table->timestamp('revoked_at')->nullable()->index();
         $table->timestamps();
         $table->softDeletes();
     }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Support;
 
 use Illuminate\Database\Eloquent\Builder;
+use RoundlyConsulting\RefreshTokens\Enums\UserKeyType;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 
 /**
@@ -47,5 +49,19 @@ final class TokenModel
         $key = config('refresh-tokens.foreign_key', 'user_id');
 
         return is_string($key) && $key !== '' ? $key : 'user_id';
+    }
+
+    /**
+     * The host user model's primary-key type, driving the foreign-key column shape.
+     *
+     * @throws InvalidTokenConfigurationException on an unsupported key type
+     */
+    public static function userKeyType(): UserKeyType
+    {
+        $type = config('refresh-tokens.user_key_type', 'id');
+        $type = is_string($type) && $type !== '' ? $type : 'id';
+
+        return UserKeyType::tryFrom($type)
+            ?? throw InvalidTokenConfigurationException::unsupportedUserKeyType($type);
     }
 }
