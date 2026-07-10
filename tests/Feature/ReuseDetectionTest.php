@@ -47,6 +47,22 @@ it('revokes the whole family and fires the signal when a rotated token is reused
     );
 });
 
+it('does not re-fire the reuse signal when a dead token is replayed', function (): void {
+    Event::fake([RefreshTokenReuseDetected::class]);
+    $user = User::factory()->create();
+
+    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+
+    RefreshToken::redeem($a->plainText); // first reuse: family revoked, one signal
+    RefreshToken::redeem($a->plainText); // replayed dead token: revokes nothing
+    RefreshToken::redeem($a->plainText); // and again
+
+    // Exactly one event and one denial, no matter how often the dead token is replayed.
+    Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
+    $this->revoker->assertRevokedCount(1);
+});
+
 it('treats a re-presented token as benign within the grace window', function (): void {
     config()->set('refresh-tokens.rotation.grace', 30);
     Event::fake([RefreshTokenReuseDetected::class]);

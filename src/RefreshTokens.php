@@ -76,6 +76,12 @@ final class RefreshTokens implements RefreshTokenManager, SessionManager
             familyId: $result->familyId,
         ));
 
+        // The replacement was born into a family that reuse detection killed around
+        // the insert: it is already revoked, so there is no live session to hand back.
+        if ($replacement->token->revoked_reason === RevocationReason::ReuseDetected) {
+            return null;
+        }
+
         return new RotationResult($result->user, $replacement, $result->familyId);
     }
 
