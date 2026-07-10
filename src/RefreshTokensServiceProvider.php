@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens;
 
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Foundation\AliasLoader;
 use Illuminate\Support\ServiceProvider;
 use RoundlyConsulting\RefreshTokens\Commands\PruneRefreshTokensCommand;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
 use RoundlyConsulting\RefreshTokens\Contracts\SessionManager;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
 
 final class RefreshTokensServiceProvider extends ServiceProvider
@@ -32,8 +30,6 @@ final class RefreshTokensServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
-
-        AliasLoader::getInstance()->alias('RefreshToken', RefreshToken::class);
 
         if ($this->app->runningInConsole()) {
             $this->commands([
