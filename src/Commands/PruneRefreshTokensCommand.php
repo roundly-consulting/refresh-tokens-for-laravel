@@ -16,12 +16,27 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  */
 final class PruneRefreshTokensCommand extends Command
 {
-    protected $signature = 'refresh-tokens:prune {--days= : Days past revoke/expiry to retain (defaults to config)}';
+    /**
+     * The minimum retention floor. Pruning tokens revoked less than a day ago would
+     * destroy reuse-detection evidence — a rotated token pruned minutes after
+     * revocation, then re-presented, finds no row and fires no family revoke.
+     */
+    private const int MINIMUM_DAYS = 1;
+
+    protected $signature = 'refresh-tokens:prune {--days= : Days past revoke/expiry to retain (min 1; defaults to config)}';
 
     protected $description = 'Force-delete refresh tokens revoked or expired past the retention window';
 
     public function handle(): int
     {
+        $option = $this->option('days');
+
+        if (is_string($option) && $option !== '' && (! ctype_digit($option) || (int) $option < self::MINIMUM_DAYS)) {
+            $this->error('The --days option must be an integer of at least '.self::MINIMUM_DAYS.' to preserve reuse-detection evidence.');
+
+            return self::FAILURE;
+        }
+
         $days = $this->resolveDays();
         $cutoff = CarbonImmutable::now()->subDays($days);
 
@@ -43,11 +58,12 @@ final class PruneRefreshTokensCommand extends Command
         $option = $this->option('days');
 
         if (is_string($option) && $option !== '' && ctype_digit($option)) {
-            return (int) $option;
+            return max(self::MINIMUM_DAYS, (int) $option);
         }
 
         $configured = config('refresh-tokens.prune.after', 30);
+        $configured = is_int($configured) ? $configured : 30;
 
-        return is_int($configured) && $configured >= 0 ? $configured : 30;
+        return max(self::MINIMUM_DAYS, $configured);
     }
 }

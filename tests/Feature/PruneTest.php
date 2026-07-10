@@ -46,6 +46,36 @@ it('honours the --days override', function (): void {
     expect(RefreshTokenModel::withTrashed()->count())->toBe(0);
 });
 
+it('rejects --days below the one-day floor to preserve reuse evidence', function (): void {
+    $user = User::factory()->create();
+    Carbon::setTestNow(now()->subHours(2));
+    RefreshTokenModel::factory()->forUser($user)->revoked()->create();
+    Carbon::setTestNow();
+
+    $this->artisan('refresh-tokens:prune --days=0')->assertFailed();
+
+    // The recently revoked evidence row was not deleted.
+    expect(RefreshTokenModel::withTrashed()->count())->toBe(1);
+});
+
+it('rejects a non-numeric --days', function (): void {
+    $this->artisan('refresh-tokens:prune --days=abc')->assertFailed();
+});
+
+it('floors config-driven retention at one day', function (): void {
+    config()->set('refresh-tokens.prune.after', 0);
+    $user = User::factory()->create();
+
+    Carbon::setTestNow(now()->subHours(2));
+    RefreshTokenModel::factory()->forUser($user)->revoked()->create();
+    Carbon::setTestNow();
+
+    // A retention of 0 would delete the 2-hour-old row; the floor keeps it.
+    $this->artisan('refresh-tokens:prune')->assertSuccessful();
+
+    expect(RefreshTokenModel::withTrashed()->count())->toBe(1);
+});
+
 it('force-deletes via the model prunable query (model:prune)', function (): void {
     $user = User::factory()->create();
 
