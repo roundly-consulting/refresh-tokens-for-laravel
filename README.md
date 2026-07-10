@@ -60,14 +60,47 @@ The published `config/refresh-tokens.php`:
 | `model` | class-string | `RefreshToken::class` | — | Model class; swap for a host subclass. |
 | `user_model` | class-string | `App\Models\User` | `REFRESH_TOKENS_USER_MODEL` | Owner model for the relation. |
 | `foreign_key` | string | `user_id` | `REFRESH_TOKENS_FOREIGN_KEY` | Owner foreign key. |
-| `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Token lifetime. |
-| `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length (~380 bits at 64). |
-| `hash.algo` | string | `sha256` | `REFRESH_TOKENS_HASH_ALGO` | At-rest hash algorithm. |
+| `user_key_type` | string | `id` | `REFRESH_TOKENS_USER_KEY_TYPE` | Owner primary-key type driving the FK column: `id` (bigint), `uuid`, or `ulid`. |
+| `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Sliding token lifetime per issue/rotation. |
+| `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Absolute cap on a rotation chain measured from the family root. `0` disables. |
+| `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length (~380 bits at 64). Minimum `32` — below it throws. |
+| `hash.algo` | string | `sha256` | `REFRESH_TOKENS_HASH_ALGO` | At-rest hash algorithm; allowlisted to `sha256`, `sha384`, `sha512`. |
 | `hash.key` | ?string | `null` | `REFRESH_TOKENS_HASH_KEY` | Optional HMAC pepper; null = plain hash. |
 | `rotation.grace` | int (seconds) | `0` | `REFRESH_TOKENS_ROTATION_GRACE` | Benign single-flight window before a re-presented token counts as reuse. `0` = strict. |
-| `prune.after` | int (days) | `30` | `REFRESH_TOKENS_PRUNE_AFTER` | Retention past revoke/expiry before pruning. |
+| `prune.after` | int (days) | `30` | `REFRESH_TOKENS_PRUNE_AFTER` | Retention past revoke/expiry before pruning. Floored at `1` day. |
 
 The package works with **zero** configuration — every key has a sensible env-backed default.
+
+### Validated configuration (fail loud, not silent)
+
+Two security-relevant keys are validated rather than silently coerced, so an env typo can't
+degrade the token store:
+
+- **`hash.algo`** is restricted to the SHA-2 allowlist (`sha256`, `sha384`, `sha512`). Any other
+  value (`md5`, `crc32b`, …) throws `InvalidTokenConfigurationException`. All three allowed digests
+  fit the `token_hash` column (widened to 128 chars for `sha512`).
+- **`token_length`** enforces a floor of **32** characters; a shorter value throws
+  `InvalidTokenConfigurationException` instead of minting a brute-forceable token.
+
+### User-key type (UUID / ULID user models)
+
+The foreign-key column matches your user model's primary key. Set `user_key_type` **before the
+first migration** to `uuid` or `ulid` for non-integer user keys; the default `id` creates the
+usual auto-incrementing bigint. An unsupported value throws `InvalidTokenConfigurationException`.
+
+### Absolute session lifetime
+
+Every rotation issues the replacement with a fresh sliding `ttl`, so a continuously refreshed
+session could otherwise live forever. `absolute_ttl` caps the whole rotation chain: the
+replacement's expiry is `min(now + ttl, family_root.created_at + absolute_ttl)`. Set it to `0` to
+disable the cap and fall back to pure sliding expiry.
+
+### Serialization safety
+
+The `RefreshToken` model hides `token_hash` and `access_reference` from array/JSON output
+(`$hidden`), so a "your devices" endpoint that serializes session rows never leaks the at-rest
+digest or the access-token reference. Auth logic reads the raw attributes directly, so nothing
+internal is affected.
 
 ### Why SHA-256 (not bcrypt/argon)?
 
@@ -154,13 +187,34 @@ $rotation = RefreshToken::rotate($plainFromClient, linkedTo: $newAccess->jti);
 // ?RotationResult { user, newRefreshToken (NewRefreshToken), redeemedFamilyId }
 ```
 
+**Failure semantics — treat `null` (or an exception) as "re-authenticate".** `rotate()` is
+redeem-then-issue: the old token is consumed **before** the replacement exists, and the operation
+is deliberately not rolled back on failure (un-claiming a consumed token would reopen the
+double-spend window). So if the replacement can't be minted — a DB blip between redeem and issue,
+the owner deleted mid-rotation, or the family being killed by a concurrent reuse response — the
+call returns `null` (or throws). The client then simply holds no valid refresh token and must log
+in again. This is an availability-only edge (forced re-login); no token is ever forged.
+
+Passing an explicit `familyId` (via `IssueContext` or `->inFamily()`) is validated: the family
+must already exist for **that same owner** and must not have been killed by reuse detection, or an
+`InvalidTokenFamilyException` is thrown. This prevents grafting a token into another user's — or a
+dead — lineage. Normal `rotate()` inherits the redeemed token's own family, so you rarely set this
+by hand.
+
 ### Reuse detection
 
 Presenting an already-rotated token is a theft signal. The **entire token family** is revoked,
 the host callback is invoked for every live member's access token, and a
-`RefreshTokenReuseDetected` event fires — all automatically, no config switch. Tune
-`rotation.grace` if your frontend legitimately re-presents a token within a short single-flight
-window.
+`RefreshTokenReuseDetected` event fires — all automatically, no config switch. The family revoke
+re-scans until a pass revokes nothing, and a replacement issued into a family around the moment it
+is killed self-revokes, so a freshly rotated token can never survive the theft response (either
+race ordering). Tune `rotation.grace` if your frontend legitimately re-presents a token within a
+short single-flight window.
+
+The `RefreshTokenReuseDetected` event fires **only when the sweep actually revokes something**
+(`revokedCount > 0`), so replaying one already-dead token can't spam your alerting with empty
+events. **Request throttling stays host-owned** — the package does not rate-limit token
+presentation; wrap your refresh endpoint in Laravel's throttle middleware to blunt replay floods.
 
 ### Revoke / logout
 
@@ -285,12 +339,21 @@ php artisan refresh-tokens:prune            # uses config('refresh-tokens.prune.
 php artisan refresh-tokens:prune --days=7   # override retention
 ```
 
+`--days` is floored at **1** (a value of `0` or a non-integer is rejected). Pruning tokens revoked
+less than a day ago would destroy **reuse-detection evidence**: a rotated token pruned minutes
+after revocation, then re-presented by a thief, finds no row and fires no family revoke. Keep the
+retention window comfortably longer than your access-token TTL so the theft signal survives.
+
 ## Security
 
-- **SHA-256 at rest** under a unique index; the plaintext is returned once and never persisted.
+- **SHA-256 at rest** (allowlisted SHA-2 only) under a unique index; the plaintext is returned
+  once and never persisted, and `token_hash`/`access_reference` are hidden from serialization.
 - **Single-query anti-double-spend** rotation (`WHERE revoked_at IS NULL` compare-and-swap) — no
   transaction, no row lock; works identically on PostgreSQL and SQLite.
-- **Always-on family revocation** on reuse detection.
+- **Always-on family revocation** on reuse detection, race-hardened so no rotated replacement
+  survives the theft response and the signal never spams on replayed dead tokens.
+- **Absolute session lifetime** (`absolute_ttl`) caps a rotation chain so a stolen-but-active
+  session can't be refreshed forever.
 - `#[SensitiveParameter]` on every plaintext parameter; plaintext and hashes are never logged.
 
 Intentionally host-owned (not this package): JWT minting/verification, jti denylisting,
