@@ -10,10 +10,27 @@ use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
 use RoundlyConsulting\RefreshTokens\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 
-arch('src never references a disallowed runtime vendor')
+arch('src only uses allowed vendor roots')
     ->expect('RoundlyConsulting\RefreshTokens')
-    ->not->toUse([
-        'Acme',
+    ->toOnlyUse([
+        'RoundlyConsulting\RefreshTokens',
+        'RoundlyConsulting\RefreshTokens\Database\Factories',
+        'RoundlyConsulting\Enums',
+        'Illuminate',
+        'Carbon',
+        'SensitiveParameter',
+        'RuntimeException',
+        // native helpers used unqualified
+        'app',
+        'config',
+        'config_path',
+        'database_path',
+        'now',
+        '__',
+    ]);
+
+arch('no forbidden runtime vendors are imported')
+    ->expect([
         'Doctrine',
         'GuzzleHttp',
         'Ramsey',
@@ -22,7 +39,8 @@ arch('src never references a disallowed runtime vendor')
         'DeviceDetector',
         'WhichBrowser',
         'Jenssegers',
-    ]);
+    ])
+    ->not->toBeUsed();
 
 arch('src never mints or verifies a jwt')
     ->expect('RoundlyConsulting\RefreshTokens')
