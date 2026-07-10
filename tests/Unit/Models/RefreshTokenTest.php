@@ -65,6 +65,20 @@ it('honours a custom table name from config', function (): void {
     expect((new RefreshToken)->getTable())->toBe('custom_tokens');
 });
 
+it('hides the digest and access reference from array and json output', function (): void {
+    $user = User::factory()->create();
+    $token = RefreshToken::factory()->forUser($user)->create(['access_reference' => 'jti-secret']);
+
+    $array = $token->toArray();
+    expect($array)->not->toHaveKey('token_hash')
+        ->and($array)->not->toHaveKey('access_reference');
+
+    $json = $token->toJson();
+    expect($json)->not->toContain('token_hash')
+        ->and($json)->not->toContain($token->token_hash)
+        ->and($json)->not->toContain('jti-secret');
+});
+
 it('selects prunable rows revoked or expired past the window', function (): void {
     config()->set('refresh-tokens.prune.after', 30);
     $user = User::factory()->create();

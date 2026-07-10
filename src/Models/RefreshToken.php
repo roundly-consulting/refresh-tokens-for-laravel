@@ -50,6 +50,15 @@ class RefreshToken extends Model
 
     protected $guarded = [];
 
+    /**
+     * Never serialise the at-rest digest or the access-token reference — a "your
+     * devices" endpoint that JSON-encodes these models must not leak them. Auth
+     * logic reads the raw attributes directly, so hiding them changes nothing there.
+     *
+     * @var list<string>
+     */
+    protected $hidden = ['token_hash', 'access_reference'];
+
     public function getTable(): string
     {
         $table = config('refresh-tokens.table', 'refresh_tokens');
