@@ -32,6 +32,15 @@ final class InvalidTokenConfigurationException extends RefreshTokenException
         ));
     }
 
+    public static function tokenLengthTooLong(int $length, int $maximum): self
+    {
+        return new self(sprintf(
+            'refresh-tokens token_length [%d] is above the maximum of %d.',
+            $length,
+            $maximum,
+        ));
+    }
+
     public static function unsupportedUserKeyType(string $type): self
     {
         return new self(sprintf(
