@@ -20,6 +20,17 @@ small contract and DTO inputs.
 - PHP 8.4+
 - Laravel 12 or 13
 
+## Integrates with
+
+- **[crypto-for-laravel](https://github.com/roundly-consulting/crypto-for-laravel)** — the at-rest
+  digest (`Crypto\Hash\Digest`, plain or HMAC-peppered) and the CSPRNG plaintext
+  (`Crypto\Random\Token`) come from the shared, audited crypto package, so the token store and the
+  entropy floor are maintained in one place instead of re-implemented here. Installed automatically;
+  nothing to configure — this package still owns `config/refresh-tokens.php` and hands the
+  algorithm, length, and pepper to crypto at the boundary.
+- **[enums-for-laravel](https://github.com/roundly-consulting/enums-for-laravel)** — labels and
+  select options on `RevocationReason`, `DeviceType`, and `UserKeyType`.
+
 ## Installation
 
 ```bash
@@ -63,7 +74,7 @@ The published `config/refresh-tokens.php`:
 | `user_key_type` | string | `id` | `REFRESH_TOKENS_USER_KEY_TYPE` | Owner primary-key type driving the FK column: `id` (bigint), `uuid`, or `ulid`. |
 | `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Sliding token lifetime per issue/rotation. |
 | `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Absolute cap on a rotation chain measured from the family root. `0` disables. |
-| `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length (~380 bits at 64). Minimum `32` — below it throws. |
+| `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length in base64url chars (~384 bits at 64). Minimum `32`, maximum `4096` — outside it throws. |
 | `hash.algo` | string | `sha256` | `REFRESH_TOKENS_HASH_ALGO` | At-rest hash algorithm; allowlisted to `sha256`, `sha384`, `sha512`. |
 | `hash.key` | ?string | `null` | `REFRESH_TOKENS_HASH_KEY` | Optional HMAC pepper; null = plain hash. |
 | `rotation.grace` | int (seconds) | `0` | `REFRESH_TOKENS_ROTATION_GRACE` | Benign single-flight window before a re-presented token counts as reuse. `0` = strict. |
@@ -104,10 +115,10 @@ internal is affected.
 
 ### Why SHA-256 (not bcrypt/argon)?
 
-A refresh token is a 64-char CSPRNG secret with ~380 bits of entropy. A slow password hash adds
-nothing against a secret that can't be brute-forced and would break the indexed unique-equality
-lookup rotation relies on. Set `hash.key` to layer an HMAC pepper on top for defence-in-depth if
-a database dump leaks.
+A refresh token is a 64-char CSPRNG secret drawn from the base64url alphabet — ~384 bits of
+entropy. A slow password hash adds nothing against a secret that can't be brute-forced and would
+break the indexed unique-equality lookup rotation relies on. Set `hash.key` to layer an HMAC pepper
+on top for defence-in-depth if a database dump leaks.
 
 ### Pepper (defence-in-depth)
 

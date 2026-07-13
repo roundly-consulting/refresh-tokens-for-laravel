@@ -24,7 +24,7 @@ return [
     // rotated (or stolen-but-active) session cannot live forever. 0 disables the cap.
     'absolute_ttl' => (int) env('REFRESH_TOKENS_ABSOLUTE_TTL', 7_776_000), // seconds; 90 days
 
-    'token_length' => (int) env('REFRESH_TOKENS_LENGTH', 64), // Str::random chars (~380 bits); min 32
+    'token_length' => (int) env('REFRESH_TOKENS_LENGTH', 64), // base64url chars (~384 bits); min 32, max 4096
 
     // Hashing at rest. SHA-256 by default: the secret already carries ~380 bits of entropy,
     // so a fast, indexed-equality-friendly hash is correct — a slow password hash would add
