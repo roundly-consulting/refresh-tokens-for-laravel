@@ -26,6 +26,32 @@ it('generates a plaintext of the configured length and hashes deterministically'
         ->and($hasher->hash($plain))->toBe($hasher->hash($plain));
 });
 
+it('mints url-safe plaintexts from the full base64url alphabet', function (): void {
+    $hasher = new TokenHasher;
+
+    $tokens = array_map(static fn (): string => $hasher->generate(), range(1, 20));
+
+    foreach ($tokens as $token) {
+        expect($token)->toMatch('/^[A-Za-z0-9_-]{64}$/');
+    }
+
+    // Distinct every time: the plaintext is CSPRNG-backed, not a counter.
+    expect(array_unique($tokens))->toHaveCount(20);
+});
+
+it('rejects a token length above the enforced maximum', function (): void {
+    config()->set('refresh-tokens.token_length', TokenHasher::MAXIMUM_TOKEN_LENGTH + 1);
+
+    expect(fn (): string => (new TokenHasher)->generate())
+        ->toThrow(InvalidTokenConfigurationException::class);
+});
+
+it('accepts the maximum token length', function (): void {
+    config()->set('refresh-tokens.token_length', TokenHasher::MAXIMUM_TOKEN_LENGTH);
+
+    expect((new TokenHasher)->generate())->toHaveLength(TokenHasher::MAXIMUM_TOKEN_LENGTH);
+});
+
 it('applies an HMAC pepper when hash.key is set', function (): void {
     config()->set('refresh-tokens.hash.key', 'pepper-secret');
     $hasher = new TokenHasher;
