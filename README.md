@@ -29,7 +29,11 @@ small contract and DTO inputs.
   nothing to configure — this package still owns `config/refresh-tokens.php` and hands the
   algorithm, length, and pepper to crypto at the boundary.
 - **[enums-for-laravel](https://github.com/roundly-consulting/enums-for-laravel)** — labels and
-  select options on `RevocationReason`, `DeviceType`, and `UserKeyType`.
+  select options on `RevocationReason` and `DeviceType`.
+- **[package-toolkit-for-laravel](https://github.com/roundly-consulting/package-toolkit-for-laravel)**
+  — the service provider, the `key_type` → column mapping (`KeyType` + the `ownerKey()` schema macro),
+  the model resolver behind `refresh-tokens.model`, and the `php artisan about` section. Installed
+  automatically; nothing to configure.
 
 ## Installation
 
@@ -37,7 +41,9 @@ small contract and DTO inputs.
 composer require roundly-consulting/refresh-tokens-for-laravel
 ```
 
-Publish and run the migration:
+**Migrations are publish-only** — the package does not load them, so publish first, then migrate.
+If your users are UUID/ULID-keyed, publish the config and set `key_type` **before** you migrate (the
+owner column is baked into the schema):
 
 ```bash
 php artisan vendor:publish --tag="refresh-tokens-migrations"
@@ -71,7 +77,7 @@ The published `config/refresh-tokens.php`:
 | `model` | class-string | `RefreshToken::class` | — | Model class; swap for a host subclass. |
 | `user_model` | class-string | `App\Models\User` | `REFRESH_TOKENS_USER_MODEL` | Owner model for the relation. |
 | `foreign_key` | string | `user_id` | `REFRESH_TOKENS_FOREIGN_KEY` | Owner foreign key. |
-| `user_key_type` | string | `id` | `REFRESH_TOKENS_USER_KEY_TYPE` | Owner primary-key type driving the FK column: `id` (bigint), `uuid`, or `ulid`. |
+| `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Owner primary-key type driving the FK column: `bigint` (alias: `id`), `uuid`, or `ulid`. An unrecognized value falls back to `bigint`. |
 | `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Sliding token lifetime per issue/rotation. |
 | `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Absolute cap on a rotation chain measured from the family root. `0` disables. |
 | `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length in base64url chars (~384 bits at 64). Minimum `32`, maximum `4096` — outside it throws. |
@@ -81,6 +87,16 @@ The published `config/refresh-tokens.php`:
 | `prune.after` | int (days) | `30` | `REFRESH_TOKENS_PRUNE_AFTER` | Retention past revoke/expiry before pruning. Floored at `1` day. |
 
 The package works with **zero** configuration — every key has a sensible env-backed default.
+
+Inspect the live configuration with:
+
+```bash
+php artisan about --only=refresh-tokens
+```
+
+The section is **secret-safe**: the pepper reports as `SET`/`MISSING` and never as a value, and a
+renamed table or a bound revoker reports as `CUSTOM`/`BOUND` — nothing a support screenshot could
+leak.
 
 ### Validated configuration (fail loud, not silent)
 
@@ -93,11 +109,19 @@ degrade the token store:
 - **`token_length`** enforces a floor of **32** characters; a shorter value throws
   `InvalidTokenConfigurationException` instead of minting a brute-forceable token.
 
-### User-key type (UUID / ULID user models)
+### Owner key type (UUID / ULID user models)
 
-The foreign-key column matches your user model's primary key. Set `user_key_type` **before the
-first migration** to `uuid` or `ulid` for non-integer user keys; the default `id` creates the
-usual auto-incrementing bigint. An unsupported value throws `InvalidTokenConfigurationException`.
+The foreign-key column matches your user model's primary key. Set `key_type` **before the first
+migration** to `uuid` or `ulid` for non-integer user keys; the default `bigint` creates the usual
+auto-incrementing column. `id` is accepted as an alias for `bigint`.
+
+Unlike the two keys above, an **unrecognized `key_type` does not throw** — it falls back to
+`bigint`. Schema shape is not a security boundary, and a one-line env typo must never leave a host
+unable to migrate.
+
+```dotenv
+REFRESH_TOKENS_KEY_TYPE=ulid
+```
 
 ### Absolute session lifetime
 
