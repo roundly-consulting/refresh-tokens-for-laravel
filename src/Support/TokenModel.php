@@ -5,13 +5,20 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Support;
 
 use Illuminate\Database\Eloquent\Builder;
-use RoundlyConsulting\RefreshTokens\Enums\UserKeyType;
-use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
+use RoundlyConsulting\PackageToolkit\Enums\KeyType;
+use RoundlyConsulting\PackageToolkit\Support\ModelResolver;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 
 /**
- * Resolves the configured refresh-token model class so hosts can swap in a
- * subclass via `refresh-tokens.model` and have every query honour it.
+ * The single resolution point for the storage seam: the model configured at
+ * `refresh-tokens.model`, the table it lives in, the owner foreign key, and that
+ * key's type.
+ *
+ * The model lookup wraps the toolkit's {@see ModelResolver} (which validates the
+ * configured value really is an Eloquent model) and narrows the result to this
+ * package's own base class — every call site uses `RefreshToken`'s own API
+ * (`isUsable()`, the scopes, the enum casts), so a real model that is not a
+ * `RefreshToken` falls back to the packaged one rather than fataling later.
  */
 final class TokenModel
 {
@@ -20,13 +27,9 @@ final class TokenModel
      */
     public static function class(): string
     {
-        $class = config('refresh-tokens.model', RefreshToken::class);
+        $model = ModelResolver::for('refresh-tokens.model', RefreshToken::class);
 
-        if (is_string($class) && (is_a($class, RefreshToken::class, true))) {
-            return $class;
-        }
-
-        return RefreshToken::class;
+        return is_a($model, RefreshToken::class, true) ? $model : RefreshToken::class;
     }
 
     public static function make(): RefreshToken
@@ -44,6 +47,13 @@ final class TokenModel
         return self::make()->newQuery();
     }
 
+    public static function table(): string
+    {
+        $table = config('refresh-tokens.table', 'refresh_tokens');
+
+        return is_string($table) && $table !== '' ? $table : 'refresh_tokens';
+    }
+
     public static function foreignKey(): string
     {
         $key = config('refresh-tokens.foreign_key', 'user_id');
@@ -54,14 +64,13 @@ final class TokenModel
     /**
      * The host user model's primary-key type, driving the foreign-key column shape.
      *
-     * @throws InvalidTokenConfigurationException on an unsupported key type
+     * Misconfiguration never throws: an unrecognized value silently falls back to
+     * bigint, so a one-line env typo can't break the schema. The value `id` — what
+     * this package shipped before it moved onto the toolkit's key type — is still
+     * accepted, as the toolkit keeps it as an alias for `bigint`.
      */
-    public static function userKeyType(): UserKeyType
+    public static function keyType(): KeyType
     {
-        $type = config('refresh-tokens.user_key_type', 'id');
-        $type = is_string($type) && $type !== '' ? $type : 'id';
-
-        return UserKeyType::tryFrom($type)
-            ?? throw InvalidTokenConfigurationException::unsupportedUserKeyType($type);
+        return KeyType::fromConfig('refresh-tokens.key_type');
     }
 }

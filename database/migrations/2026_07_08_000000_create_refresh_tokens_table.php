@@ -12,12 +12,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $table = config('refresh-tokens.table', 'refresh_tokens');
         $foreignKey = TokenModel::foreignKey();
-        $keyType = TokenModel::userKeyType();
+        $keyType = TokenModel::keyType();
 
         Schema::create(
-            is_string($table) ? $table : 'refresh_tokens',
+            TokenModel::table(),
             function (Blueprint $blueprint) use ($foreignKey, $keyType): void {
                 RefreshTokenBlueprint::columns($blueprint, $foreignKey, $keyType);
             },

@@ -5,22 +5,27 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Support;
 
 use Illuminate\Database\Schema\Blueprint;
-use RoundlyConsulting\RefreshTokens\Enums\UserKeyType;
+use RoundlyConsulting\PackageToolkit\Enums\KeyType;
 
 /**
  * The canonical column set for the refresh-tokens table. Kept in one place so a
  * host adoption migration (e.g. transforming an existing tokens table) can
  * reproduce the exact shape without duplicating the definition.
+ *
+ * The owner column comes from the toolkit's `ownerKey()` Blueprint macro, so the
+ * key-type mapping (bigint / uuid / ulid) is the fleet's rather than this
+ * package's. The macro is registered in the service provider's `register()`, so
+ * it exists before the migrator can run.
  */
 final class RefreshTokenBlueprint
 {
     public static function columns(
         Blueprint $table,
         string $foreignKey = 'user_id',
-        UserKeyType $keyType = UserKeyType::Id,
+        KeyType $keyType = KeyType::BigInt,
     ): void {
         $table->id();
-        $keyType->foreignColumn($table, $foreignKey);
+        $table->ownerKey($foreignKey, $keyType);
 
         // Auth / rotation core. 128 chars fits the widest allowed digest (sha512 hex).
         $table->string('token_hash', 128)->unique();

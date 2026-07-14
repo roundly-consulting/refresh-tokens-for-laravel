@@ -11,10 +11,12 @@ return [
     'user_model' => env('REFRESH_TOKENS_USER_MODEL', 'App\\Models\\User'),
     'foreign_key' => env('REFRESH_TOKENS_FOREIGN_KEY', 'user_id'),
 
-    // Primary-key type of the user model, driving the foreign-key column: `id`
-    // (auto-incrementing bigint, default), `uuid`, or `ulid`. Set this before the
-    // first migration to match a UUID/ULID-keyed user model.
-    'user_key_type' => env('REFRESH_TOKENS_USER_KEY_TYPE', 'id'),
+    // Primary-key type of the user model, driving the foreign-key column: `bigint`
+    // (auto-incrementing, the default; `id` is accepted as an alias), `uuid`, or
+    // `ulid`. Set this before the first migration to match a UUID/ULID-keyed user
+    // model. An unrecognized value falls back to `bigint` — a typo must never
+    // silently reshape (or break) the schema.
+    'key_type' => env('REFRESH_TOKENS_KEY_TYPE', 'bigint'),
 
     // Token lifetime & shape
     'ttl' => (int) env('REFRESH_TOKENS_TTL', 2_592_000), // seconds; 30 days (sliding)

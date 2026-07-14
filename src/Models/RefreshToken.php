@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use RoundlyConsulting\RefreshTokens\Database\Factories\RefreshTokenFactory;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
+use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
  * @property int $id
@@ -61,9 +62,7 @@ class RefreshToken extends Model
 
     public function getTable(): string
     {
-        $table = config('refresh-tokens.table', 'refresh_tokens');
-
-        return is_string($table) && $table !== '' ? $table : 'refresh_tokens';
+        return TokenModel::table();
     }
 
     /**
@@ -80,15 +79,11 @@ class RefreshToken extends Model
     public function owner(): BelongsTo
     {
         $userModel = config('refresh-tokens.user_model', 'App\\Models\\User');
-        $foreignKey = config('refresh-tokens.foreign_key', 'user_id');
 
         /** @var class-string<Model> $userModel */
         $userModel = is_string($userModel) && $userModel !== '' ? $userModel : 'App\\Models\\User';
 
-        return $this->belongsTo(
-            $userModel,
-            is_string($foreignKey) && $foreignKey !== '' ? $foreignKey : 'user_id',
-        );
+        return $this->belongsTo($userModel, TokenModel::foreignKey());
     }
 
     /**
@@ -122,6 +117,13 @@ class RefreshToken extends Model
 
     /**
      * Rows revoked or expired longer ago than `refresh-tokens.prune.after` days.
+     *
+     * `self::query()` — deliberately, not `TokenModel::query()`. This is called on
+     * whatever model `php artisan model:prune` instantiated, and PHP forwards late
+     * static binding through `self::`, so the builder is already the *called* class
+     * (a host subclass keeps its own scopes and delete events). Routing it through
+     * the config seam would instead prune a host's un-configured subclass as the
+     * packaged base class. Pinned in tests/Configured.
      *
      * @return Builder<RefreshToken>
      */

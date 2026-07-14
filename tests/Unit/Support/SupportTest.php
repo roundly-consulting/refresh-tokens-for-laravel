@@ -5,9 +5,10 @@ declare(strict_types=1);
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use RoundlyConsulting\PackageToolkit\Enums\KeyType;
+use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
-use RoundlyConsulting\RefreshTokens\Enums\UserKeyType;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
@@ -105,42 +106,40 @@ it('stores a sha512 digest at full width and still redeems', function (): void {
         ->and(RefreshToken::redeem($new->plainText))->not->toBeNull();
 });
 
-it('resolves the configured user key type', function (string $value, UserKeyType $type): void {
-    config()->set('refresh-tokens.user_key_type', $value);
+it('resolves the configured key type', function (string $value, KeyType $type): void {
+    config()->set('refresh-tokens.key_type', $value);
 
-    expect(TokenModel::userKeyType())->toBe($type);
+    expect(TokenModel::keyType())->toBe($type);
 })->with([
-    ['id', UserKeyType::Id],
-    ['uuid', UserKeyType::Uuid],
-    ['ulid', UserKeyType::Ulid],
+    // `id` is the value this package shipped before the toolkit's KeyType; the
+    // toolkit keeps it as an alias for bigint, so an existing host env keeps working.
+    ['id', KeyType::BigInt],
+    ['bigint', KeyType::BigInt],
+    ['uuid', KeyType::Uuid],
+    ['ulid', KeyType::Ulid],
 ]);
 
-it('throws on an unsupported user key type', function (): void {
-    config()->set('refresh-tokens.user_key_type', 'guid');
+it('falls back to bigint for an unrecognized or non-string key type', function (mixed $value): void {
+    // Misconfiguration must never break the schema — it silently degrades to the
+    // safe default rather than throwing mid-migration.
+    config()->set('refresh-tokens.key_type', $value);
 
-    expect(fn (): UserKeyType => TokenModel::userKeyType())
-        ->toThrow(InvalidTokenConfigurationException::class);
-});
+    expect(TokenModel::keyType())->toBe(KeyType::BigInt);
+})->with(['guid', '', 123, null]);
 
-it('defaults to id for a non-string user key type', function (): void {
-    config()->set('refresh-tokens.user_key_type', 123);
-
-    expect(TokenModel::userKeyType())->toBe(UserKeyType::Id);
-});
-
-it('adds a foreign-key column for every key type', function (UserKeyType $type): void {
+it('adds a foreign-key column for every key type', function (KeyType $type): void {
     $table = 'rt_keytype_probe';
     Schema::dropIfExists($table);
 
     Schema::create($table, function (Blueprint $blueprint) use ($type): void {
         $blueprint->id();
-        $type->foreignColumn($blueprint, 'user_id');
+        $blueprint->ownerKey('user_id', $type);
     });
 
     expect(Schema::hasColumn($table, 'user_id'))->toBeTrue();
 
     Schema::drop($table);
-})->with([UserKeyType::Id, UserKeyType::Uuid, UserKeyType::Ulid]);
+})->with([KeyType::BigInt, KeyType::Uuid, KeyType::Ulid]);
 
 it('has a no-op default access-token revoker', function (): void {
     $revoker = new NullAccessTokenRevoker;
@@ -150,16 +149,33 @@ it('has a no-op default access-token revoker', function (): void {
     expect(true)->toBeTrue();
 });
 
-it('resolves the configured model class and foreign key', function (): void {
+it('resolves the configured model class, table and foreign key', function (): void {
     expect(TokenModel::class())->toBe(RefreshTokenModel::class)
         ->and(TokenModel::make())->toBeInstanceOf(RefreshTokenModel::class)
+        ->and(TokenModel::table())->toBe('refresh_tokens')
         ->and(TokenModel::foreignKey())->toBe('user_id');
 
-    config()->set('refresh-tokens.model', 'not-a-class');
+    config()->set('refresh-tokens.table', '');
     config()->set('refresh-tokens.foreign_key', '');
 
-    expect(TokenModel::class())->toBe(RefreshTokenModel::class)
+    expect(TokenModel::table())->toBe('refresh_tokens')
         ->and(TokenModel::foreignKey())->toBe('user_id');
+});
+
+it('throws when the configured model is not a model class', function (): void {
+    // The toolkit resolver validates the seam instead of silently swallowing a typo.
+    config()->set('refresh-tokens.model', 'not-a-class');
+
+    expect(fn (): string => TokenModel::class())
+        ->toThrow(InvalidConfigurationException::class);
+});
+
+it('falls back to the packaged model for a real model that is not ours', function (): void {
+    // The toolkit resolver only validates "is a Model" — the package must narrow to
+    // its own base class, because every call site uses RefreshToken's own API.
+    config()->set('refresh-tokens.model', User::class);
+
+    expect(TokenModel::class())->toBe(RefreshTokenModel::class);
 });
 
 it('issues via the fluent builder filling ip and user agent from a request', function (): void {

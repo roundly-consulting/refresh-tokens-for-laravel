@@ -40,12 +40,4 @@ final class InvalidTokenConfigurationException extends RefreshTokenException
             $maximum,
         ));
     }
-
-    public static function unsupportedUserKeyType(string $type): self
-    {
-        return new self(sprintf(
-            'Unsupported refresh-tokens user_key_type [%s]. Allowed: id, uuid, ulid.',
-            $type,
-        ));
-    }
 }
