@@ -1,5 +1,6 @@
-includes:
-    - vendor/larastan/larastan/extension.neon
+# larastan's extension.neon and the package toolkit's Blueprint-macro declarations
+# are both auto-loaded by phpstan/extension-installer — including either by hand
+# here would load it twice.
 parameters:
     level: 7
     paths:

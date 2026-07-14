@@ -1,6 +1,6 @@
 {
     "name": "roundly-consulting/refresh-tokens-for-laravel",
-    "description": "Opaque, rotating refresh tokens and device sessions for Laravel — SHA-256 at rest, atomic anti-double-spend rotation, family revocation on reuse. Zero third-party runtime deps.",
+    "description": "Opaque, rotating refresh tokens and device sessions for Laravel \u2014 SHA-256 at rest, atomic anti-double-spend rotation, family revocation on reuse. Zero third-party runtime deps.",
     "keywords": [
         "roundly-consulting",
         "laravel",
@@ -27,14 +27,16 @@
         "illuminate/http": "^12.0|^13.0",
         "illuminate/support": "^12.0|^13.0",
         "roundly-consulting/crypto-for-laravel": "@dev",
-        "roundly-consulting/enums-for-laravel": "@dev"
+        "roundly-consulting/enums-for-laravel": "@dev",
+        "roundly-consulting/package-toolkit-for-laravel": "@dev"
     },
     "require-dev": {
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.0",
         "nunomaduro/collision": "^8.0",
         "orchestra/testbench": "^10.0|^11.0",
-        "pestphp/pest": "^4.0"
+        "pestphp/pest": "^4.0",
+        "phpstan/extension-installer": "^1.4"
     },
     "repositories": [
         {
@@ -94,7 +96,8 @@
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
         }
     },
     "extra": {
