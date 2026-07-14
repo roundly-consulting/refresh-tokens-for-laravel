@@ -120,9 +120,13 @@ final class TokenHasher
     }
 
     /**
+     * The at-rest hashing allowlist, as raw algorithm names. Public so the
+     * service provider's `about` section can report the configured digest
+     * without duplicating the allowlist (or resolving it, which throws).
+     *
      * @return list<string>
      */
-    private static function allowedAlgorithms(): array
+    public static function allowedAlgorithms(): array
     {
         return array_map(
             static fn (HashAlgorithm $case): string => $case->value,
