@@ -143,8 +143,16 @@ ArchPresets::strictTypes('RoundlyConsulting\RefreshTokens');
  * (pinned by the preset below instead), and RefreshTokenException, the base every
  * refresh-tokens error extends so a host can catch them uniformly.
  */
-ArchPresets::finalByDefault('RoundlyConsulting\RefreshTokens')
-    ->ignoring([RefreshTokenModel::class, RefreshTokenException::class]);
+// The exemptions go through the preset's `$ignoring` PARAMETER, not Pest's `->ignoring()`.
+// Only the parameter is checked for staleness: `::class` on a non-existent class is not a
+// PHP error (it resolves to a string at compile time), so an exemption that has outlived
+// the code it excused silences nothing and says nothing — leaving the ban applying where
+// you believe it does not. The README's own example uses the unchecked form for this
+// preset; the parameter is strictly better and costs nothing.
+ArchPresets::finalByDefault('RoundlyConsulting\RefreshTokens', [
+    RefreshTokenModel::class,
+    RefreshTokenException::class,
+]);
 
 /**
  * `refresh-tokens.user_model` is deliberately NOT listed. It is not a swappable *package*
