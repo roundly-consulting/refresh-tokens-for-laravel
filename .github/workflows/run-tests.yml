@@ -21,21 +21,9 @@ jobs:
 
     name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }} - ${{ matrix.os }}
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: testing
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
+    # No Postgres service here any more: this job is the sqlite + coverage leg, and the
+    # real engine now has its own whole-suite job below. Provisioning a database this leg
+    # never connects to was pure cost.
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -68,12 +56,64 @@ jobs:
       - name: Execute tests (sqlite + coverage gate)
         run: vendor/bin/pest --coverage --min=95
 
-      - name: Execute true-concurrency double-spend lane (postgres)
+  test-pgsql:
+    runs-on: ubuntu-latest
+    name: P8.4 - pgsql real-engine
+
+    services:
+      postgres:
+        image: postgres:16
         env:
-          REFRESH_TOKENS_PG: "1"
-          PG_HOST: 127.0.0.1
-          PG_PORT: 5432
-          PG_DATABASE: testing
-          PG_USERNAME: postgres
-          PG_PASSWORD: postgres
-        run: vendor/bin/pest --group=concurrency-pgsql
+          POSTGRES_DB: testing
+          POSTGRES_USER: testing
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, pgsql, pdo_pgsql, bcmath, soap, intl, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_AUTH_TOKEN }}"}}'
+        run: composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Execute tests against postgres
+        env:
+          # Replaces this package's bespoke PG_USERNAME/PG_PASSWORD convention and its
+          # targeted `pest --group=concurrency-pgsql` lane, on the fleet's evidence:
+          #
+          #  - the old lane gated on `getenv('REFRESH_TOKENS_PG') === '1'` — whether an env
+          #    var was SET, never whether an engine was REACHABLE, so a leg that lost its
+          #    service still reported green;
+          #  - it ran raw SQL, never the package's own redeem() path;
+          #  - and a lane only ever runs what someone remembered to tag. The shops pilot's
+          #    real find surfaced in an ordinary domain test nobody would have tagged, and
+          #    the lane's cost argument evaporates once the leg runs in parallel with the
+          #    sqlite matrix.
+          #
+          # TESTING_DB_DRIVER is what moves the suite off sqlite. The location vars alone
+          # only say where the engine is: without the driver this job would run every test
+          # on sqlite and call itself a postgres leg.
+          TESTING_DB_DRIVER: pgsql
+          TESTING_DB_HOST: 127.0.0.1
+          TESTING_DB_PORT: 5432
+          TESTING_DB_DATABASE: testing
+          TESTING_DB_USERNAME: testing
+          TESTING_DB_PASSWORD: secret
+        # Coverage is enforced on the sqlite matrix; this is a correctness leg, and
+        # re-measuring it doubles the slowest job for no signal.
+        run: vendor/bin/pest --ci

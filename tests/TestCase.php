@@ -4,40 +4,53 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\RefreshTokens\Tests;
 
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
-use Orchestra\Testbench\TestCase as Orchestra;
+use Illuminate\Support\ServiceProvider;
+use RoundlyConsulting\Crypto\CryptoServiceProvider;
 use RoundlyConsulting\RefreshTokens\RefreshTokensServiceProvider;
+use RoundlyConsulting\Testing\PackageTestCase;
 
-abstract class TestCase extends Orchestra
+abstract class TestCase extends PackageTestCase
 {
     /**
-     * @return array<int, class-string>
+     * Every provider refresh-tokens hard-requires, in registration order. A host
+     * auto-discovers these; the suite must list them or the test environment is a
+     * fiction. Crypto is not optional — it owns the CSPRNG the token secret is drawn
+     * from and the digest it is stored under.
+     *
+     * @return list<class-string<ServiceProvider>>
      */
-    protected function getPackageProviders($app): array
+    protected function packageProviders(): array
     {
-        return [RefreshTokensServiceProvider::class];
+        return [
+            CryptoServiceProvider::class,
+            RefreshTokensServiceProvider::class,
+        ];
     }
 
-    protected function defineEnvironment($app): void
+    /**
+     * The token table, named by provider class (never by filename), plus the host-owned
+     * `users` fixture the tokens hang off.
+     *
+     * @return list<class-string<ServiceProvider>|string>
+     */
+    protected function migrationSources(): array
     {
-        $app['config']->set('database.default', 'testing');
-        $app['config']->set('database.connections.testing', [
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-            'prefix' => '',
-        ]);
-        $app['config']->set('refresh-tokens.user_model', Fixtures\User::class);
+        return [
+            __DIR__.'/database/migrations',
+            RefreshTokensServiceProvider::class,
+        ];
     }
 
-    protected function defineDatabaseMigrations(): void
+    /**
+     * Applied BEFORE the providers boot — the only correct place, and load-bearing here:
+     * the migration reads `refresh-tokens.user_model` (through `TokenModel::foreignKey()`
+     * and `::keyType()`) to shape the foreign-key column, so setting it in a test body
+     * would be read only after the table already existed.
+     *
+     * @return array<string, mixed>
+     */
+    protected function configBeforeBoot(): array
     {
-        Schema::create('users', function (Blueprint $table): void {
-            $table->id();
-            $table->string('name')->nullable();
-            $table->timestamps();
-        });
-
-        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        return ['refresh-tokens.user_model' => Fixtures\User::class];
     }
 }

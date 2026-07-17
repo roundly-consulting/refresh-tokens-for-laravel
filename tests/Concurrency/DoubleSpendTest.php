@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
+use RoundlyConsulting\Testing\Database\DriverMatrix;
 
 /**
  * Structural race (sqlite, deterministic): revoke the row the instant redeem SELECTs
@@ -87,43 +87,58 @@ it('serialises exactly one winner across many redemptions of the same token', fu
 });
 
 /**
- * True concurrency (pgsql CI leg, group `concurrency-pgsql`): two competing conditional
- * claims over two separate connections prove the DB serialises the compare-and-swap —
- * exactly one UPDATE affects a row. Skipped unless a Postgres service is provisioned.
+ * True concurrency on a real engine: two competing redemptions of the same token over two
+ * separate connections prove the database serialises the compare-and-swap — exactly one
+ * wins.
+ *
+ * ## What replaced the bespoke `--group=concurrency-pgsql` lane, and why it is stronger
+ *
+ * This package used to run its own Postgres job (`PG_USERNAME`/`PG_PASSWORD`, a targeted
+ * `pest --group=concurrency-pgsql` lane). That convention is deleted in favour of the
+ * fleet's whole-suite `TESTING_DB_*` leg. The old lane had three holes this closes:
+ *
+ *  1. **It gated on `getenv('REFRESH_TOKENS_PG') !== '1'`** — it asked whether an env var
+ *     was *set*, never whether an engine was *reachable*. A leg that lost its service
+ *     still reported green. The gate is now `DriverMatrix::driver()`, i.e. the connection
+ *     the suite is actually on.
+ *  2. **It never ran the package's code.** It hand-wrote a raw INSERT and two raw
+ *     `->update()` calls, so it proved that *Postgres* honours `WHERE revoked_at IS NULL`
+ *     — a fact about Postgres, not about refresh-tokens. `RefreshToken::redeem()` was
+ *     never on the pgsql path. This drives the real facade flow, so the claim under test
+ *     is the one the package ships.
+ *  3. **It was a lane, so only tagged tests met the engine.** Divergence is not
+ *     predictable in advance: the shops pilot's real find surfaced in an ordinary domain
+ *     test nobody would have tagged. Now the whole suite runs on Postgres and this case is
+ *     simply one of them.
+ *
+ * The one thing the lane did that a single-connection suite cannot: drive **two real
+ * sessions**. That is preserved here, and is why this case still exists at all.
  */
 it('lets only one connection win the conditional claim on postgres', function (): void {
-    if (getenv('REFRESH_TOKENS_PG') !== '1') {
-        $this->markTestSkipped('Postgres double-spend lane runs only when REFRESH_TOKENS_PG=1.');
-    }
+    $user = User::factory()->create();
+    $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
 
-    config()->set('database.connections.pgsql', [
-        'driver' => 'pgsql',
-        'host' => getenv('PG_HOST') ?: '127.0.0.1',
-        'port' => (int) (getenv('PG_PORT') ?: 5432),
-        'database' => getenv('PG_DATABASE') ?: 'testing',
-        'username' => getenv('PG_USERNAME') ?: 'postgres',
-        'password' => getenv('PG_PASSWORD') ?: 'postgres',
-        'prefix' => '',
-    ]);
-    config()->set('refresh-tokens.table', 'refresh_tokens');
+    // A second, independent session against the same database — a real concurrent
+    // connection, not another handle on the transaction under test.
+    config()->set('database.connections.rival', DriverMatrix::connectionConfig('pgsql'));
+    DB::purge('rival');
 
-    DB::connection('pgsql')->getSchemaBuilder()->dropAllTables();
-    $this->artisan('migrate', ['--database' => 'pgsql', '--path' => 'database/migrations', '--realpath' => true]);
+    // The rival claims the row first, through the same conditional-claim SQL the package's
+    // redeem() issues.
+    $claimed = DB::connection('rival')->table('refresh_tokens')
+        ->where('id', $new->token->getKey())
+        ->whereNull('revoked_at')
+        ->update(['revoked_at' => now(), 'revoked_reason' => RevocationReason::Rotated->value]);
 
-    $key = DB::connection('pgsql')->table('refresh_tokens')->insertGetId([
-        'user_id' => 1,
-        'token_hash' => hash('sha256', 'pg-race'),
-        'family_id' => (string) Str::uuid(),
-        'expires_at' => now()->addDay(),
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+    expect($claimed)->toBe(1);
 
-    $claimOne = DB::connection('pgsql')->table('refresh_tokens')
-        ->where('id', $key)->whereNull('revoked_at')->update(['revoked_at' => now()]);
+    // Now the package's real redemption races in behind it and must LOSE — the atomic
+    // claim affects zero rows, so the redemption collapses to null rather than minting a
+    // second live token from a token already spent. A double-spend here is two valid
+    // sessions from one refresh token.
+    expect(RefreshToken::redeem($new->plainText))->toBeNull();
 
-    $claimTwo = DB::connection('pgsql')->table('refresh_tokens')
-        ->where('id', $key)->whereNull('revoked_at')->update(['revoked_at' => now()]);
-
-    expect($claimOne)->toBe(1)->and($claimTwo)->toBe(0);
-})->group('concurrency-pgsql');
+    // Revoked exactly once, by the winner, with the winner's reason intact.
+    expect(RefreshTokenModel::query()->whereKey($new->token->getKey())->count())->toBe(1)
+        ->and($new->token->fresh()->revoked_reason)->toBe(RevocationReason::Rotated);
+})->skip(fn (): bool => DriverMatrix::driver() !== 'pgsql', 'true concurrency is only observable on a real engine');

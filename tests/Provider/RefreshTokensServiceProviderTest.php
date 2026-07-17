@@ -72,23 +72,44 @@ it('reports the package in about', function (): void {
         ->and($output)->toContain('NONE (no-op)');
 });
 
+/**
+ * A — the secret-safe `about` capture.
+ *
+ * Purchases #13 is the bug this expectation exists for: the fleet's most credential-heavy
+ * `about` section was guarded by negative assertions against `app(Kernel::class)->output()`,
+ * which returns `''` — every "does not leak" check was vacuous. This package's own test was
+ * already on the right reader and already guarded the guard, so adopting the expectation is
+ * not a bug fix here; it is the same proof with the ordering enforced by the assertion
+ * rather than by this file remembering to do it: (1) output non-empty, (2) every
+ * `mustRender` string present, (3) only then no secret renders.
+ *
+ * It matters most here of anywhere: `hash.key` is the HMAC pepper standing between a leaked
+ * database dump and every live token.
+ */
 it('never renders the pepper, the table name or a swapped model namespace in about', function (): void {
     config()->set('refresh-tokens.hash.key', 'super-secret-pepper-value');
     config()->set('refresh-tokens.table', 'acme_internal_refresh_tokens');
     config()->set('refresh-tokens.model', CustomRefreshToken::class);
 
-    Artisan::call('about', ['--only' => 'refresh-tokens']);
-    $output = Artisan::output();
-
-    // Guard the guard: an empty capture would make every negative below vacuous.
-    expect($output)->toContain('CustomRefreshToken')
-        ->and($output)->toContain('SET')
-        ->and($output)->toContain('CUSTOM');
-
-    expect($output)->not->toContain('super-secret-pepper-value')
-        ->and($output)->not->toContain('acme_internal_refresh_tokens')
-        // The model renders by base name, never its namespace.
-        ->and($output)->not->toContain('RoundlyConsulting\RefreshTokens\Tests\Fixtures');
+    expect('refresh-tokens')->toLeakNoSecrets(
+        secrets: [
+            // The pepper participates in the at-rest digest of every token. It renders as
+            // SET/MISSING and never as a value.
+            'super-secret-pepper-value',
+            // The host's table name is its topology, not the console's business.
+            'acme_internal_refresh_tokens',
+            // The model renders by base name, never its namespace — a namespace names the
+            // host's own application structure.
+            'RoundlyConsulting\RefreshTokens\Tests\Fixtures',
+        ],
+        mustRender: [
+            // The positive half: each is the safe report standing in for one of the secrets
+            // above, so it also proves the line rendered rather than being silently absent.
+            'CustomRefreshToken',
+            'SET',
+            'CUSTOM',
+        ],
+    );
 });
 
 it('reports a missing pepper and a disabled absolute ttl', function (): void {

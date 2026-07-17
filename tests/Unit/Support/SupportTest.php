@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use RoundlyConsulting\PackageToolkit\Enums\KeyType;
 use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
@@ -185,16 +186,22 @@ it('issues via the fluent builder filling ip and user agent from a request', fun
         'HTTP_USER_AGENT' => 'Requester/9',
     ]);
 
-    // Seed a live root in the family so inheriting it passes the ownership check.
-    RefreshTokenModel::factory()->forUser($user)->forFamily('fam-9')->create();
+    // A real uuid, not 'fam-9': `family_id` is a uuid column, so a strict engine rejects
+    // the comparison outright and the guard in IssueRefreshTokenAction now rejects a
+    // malformed id up front on every driver. The old literal only worked because sqlite
+    // compares uuid columns as text.
+    $familyId = (string) Str::uuid();
 
-    $new = RefreshToken::for($user)->fromRequest($request)->inFamily('fam-9')->issue();
+    // Seed a live root in the family so inheriting it passes the ownership check.
+    RefreshTokenModel::factory()->forUser($user)->forFamily($familyId)->create();
+
+    $new = RefreshToken::for($user)->fromRequest($request)->inFamily($familyId)->issue();
 
     expect($new)->toBeInstanceOf(NewRefreshToken::class)
         ->and($new->token->ip_address)->toBe('203.0.113.7')
         ->and($new->token->user_agent)->toBe('Requester/9')
-        ->and($new->token->family_id)->toBe('fam-9');
+        ->and($new->token->family_id)->toBe($familyId);
 
     // Also proves IssueContext is what the builder produces.
-    expect(new IssueContext(familyId: 'fam-9'))->toBeInstanceOf(IssueContext::class);
+    expect(new IssueContext(familyId: $familyId))->toBeInstanceOf(IssueContext::class);
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
@@ -44,11 +45,15 @@ it('scopes active, expired and family rows', function (): void {
     $active = RefreshToken::factory()->forUser($user)->create();
     $expired = RefreshToken::factory()->forUser($user)->expired()->create();
     $revoked = RefreshToken::factory()->forUser($user)->revoked()->create();
-    $family = RefreshToken::factory()->forUser($user)->forFamily('fam-1')->create();
+    // A real uuid, not 'fam-1': `family_id` is a uuid column, so a strict engine rejects
+    // the comparison outright. The old literal only worked because sqlite compares uuid
+    // columns as text.
+    $familyId = (string) Str::uuid();
+    $family = RefreshToken::factory()->forUser($user)->forFamily($familyId)->create();
 
     expect(RefreshToken::query()->active()->pluck('id')->all())->toBe([$active->id, $family->id])
         ->and(RefreshToken::query()->expired()->pluck('id')->all())->toContain($expired->id)
-        ->and(RefreshToken::query()->forFamily('fam-1')->pluck('id')->all())->toBe([$family->id])
+        ->and(RefreshToken::query()->forFamily($familyId)->pluck('id')->all())->toBe([$family->id])
         ->and($revoked->isUsable())->toBeFalse();
 });
 

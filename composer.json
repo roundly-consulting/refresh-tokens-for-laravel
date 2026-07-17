@@ -36,7 +36,8 @@
         "nunomaduro/collision": "^8.0",
         "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^4.0",
-        "phpstan/extension-installer": "^1.4"
+        "phpstan/extension-installer": "^1.4",
+        "roundly-consulting/testing-for-laravel": "@dev"
     },
     "repositories": [
         {
@@ -73,6 +74,18 @@
         {
             "type": "vcs",
             "url": "https://github.com/roundly-consulting/package-toolkit-for-laravel",
+            "no-api": true
+        },
+        {
+            "type": "path",
+            "url": "../testing-for-laravel*",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/roundly-consulting/testing-for-laravel",
             "no-api": true
         }
     ],

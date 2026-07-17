@@ -7,8 +7,11 @@ use RoundlyConsulting\RefreshTokens\Actions\RevokeSessionAction;
 use RoundlyConsulting\RefreshTokens\Actions\RevokeTokenFamilyAction;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
+use RoundlyConsulting\RefreshTokens\Exceptions\RefreshTokenException;
+use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
+use RoundlyConsulting\Testing\Arch\ArchPresets;
 
 // Our own crypto-for-laravel is allowed — it owns the digest and CSPRNG
 // primitives — but any accidental `use` of a third-party crypto/token library
@@ -48,21 +51,21 @@ arch('no forbidden runtime vendors are imported')
     ])
     ->not->toBeUsed();
 
-// Every cryptographic primitive comes from crypto-for-laravel — never a
-// third-party library, and never a hand-rolled copy back inside this package. The
-// at-rest digest, the HMAC pepper and the CSPRNG must not be re-implemented here.
-arch('no crypto primitive is re-implemented locally')
-    ->expect('RoundlyConsulting\RefreshTokens')
-    ->not->toUse([
-        'hash',
-        'hash_hmac',
-        'hash_equals',
-        'random_bytes',
-        'random_int',
-        'openssl_random_pseudo_bytes',
-        'base64_encode',
-        'base64_decode',
-    ]);
+/**
+ * Every cryptographic primitive comes from crypto-for-laravel — never a third-party
+ * library, and never a hand-rolled copy back inside this package. The at-rest digest, the
+ * HMAC pepper and the CSPRNG must not be re-implemented here.
+ *
+ * This replaces the bespoke ban list that stood here. The preset is a superset of it in
+ * every direction that matters (it also bans the openssl and sodium families, and
+ * hash_pbkdf2), with one deliberate subtraction: `hash_equals` is NOT banned. It IS PHP's
+ * constant-time compare rather than a re-implementation of one, it has no algorithm or key
+ * to centralise, and banning it pushes callers toward `$a === $b` — a timing leak in
+ * exactly the code that compares a token digest. The fleet removed it from the shared
+ * preset on 2026-07-17; this package was one of six still banning it in a local list that
+ * never read the shared one.
+ */
+ArchPresets::noLocalCryptoPrimitives('RoundlyConsulting\RefreshTokens');
 
 // Str::random is a general-purpose helper, not a token mint: plaintext secrets
 // come from Crypto\Random\Token so the entropy floor lives in one audited place.
@@ -110,7 +113,15 @@ it('imports no crypto class tagged @internal', function (): void {
         $contents = (string) file_get_contents($file->getPathname());
 
         foreach ($internal as $class) {
-            expect($contents)->not->toContain($class, "{$file->getPathname()} imports the internal crypto class {$class}");
+            // This read `expect($contents)->not->toContain($class, "…message…")`, and that
+            // call is **vacuous**: Pest's `toContain` is variadic, so the message was taken
+            // as a SECOND NEEDLE, and `not->toContain(a, b)` passes whenever a and b are
+            // not both present — which, for a message that never appears in source, is
+            // always. The ban could not fail. Asserted through `str_contains` so the
+            // message stays a message.
+            expect(str_contains($contents, $class))->toBeFalse(
+                "{$file->getPathname()} imports the internal crypto class {$class}",
+            );
         }
     }
 });
@@ -121,9 +132,73 @@ arch('src never mints or verifies a jwt')
         'RoundlyConsulting\Jwt',
     ]);
 
-arch('every source file declares strict types')
-    ->expect('RoundlyConsulting\RefreshTokens')
-    ->toUseStrictTypes();
+ArchPresets::strictTypes('RoundlyConsulting\RefreshTokens');
+
+/**
+ * The deliberate tension, run as a pair. `finalByDefault` wants every class closed;
+ * `swappableModelsAreNotFinal` forbids `final` on a config-swappable model — a PHP fatal
+ * the moment a host uses the seam the config documents, shipped 7x across the fleet.
+ *
+ * Exempt here: RefreshToken, which `refresh-tokens.model` invites a host to subclass
+ * (pinned by the preset below instead), and RefreshTokenException, the base every
+ * refresh-tokens error extends so a host can catch them uniformly.
+ */
+ArchPresets::finalByDefault('RoundlyConsulting\RefreshTokens')
+    ->ignoring([RefreshTokenModel::class, RefreshTokenException::class]);
+
+/**
+ * `refresh-tokens.user_model` is deliberately NOT listed. It is not a swappable *package*
+ * model: it names the HOST's own user class, which this package never ships, never
+ * subclasses and cannot pin a default for (the default is the literal string
+ * 'App\Models\User', a class that does not exist here). `toHonourModelSwap` and this
+ * preset both assert against a packaged model and its shipped default, so neither has
+ * anything to say about it. The one real seam is `refresh-tokens.model`.
+ */
+ArchPresets::swappableModelsAreNotFinal([
+    RefreshTokenModel::class => 'refresh-tokens.model',
+]);
+
+/**
+ * `modelsResolveThroughSeam` is **REJECTED for this package, with cause** — and the cause
+ * is a false positive, so it is reported rather than worked around.
+ *
+ * The preset reds on `Models/RefreshToken.php`, for `self::query()` in `prunable()`. That
+ * call is **correct, deliberate, and documented at the call site**, and routing it through
+ * the seam as the preset demands would introduce the very bug the preset exists to
+ * prevent:
+ *
+ *   `prunable()` is an instance method that `php artisan model:prune` calls on the model
+ *   the HOST configured. `self::` is a PHP **forwarding call**, so it preserves late static
+ *   binding — verified, not assumed: for `class Sub extends Base`, `(new Sub)->viaSelf()`
+ *   where `viaSelf()` does `self::who()` returns `Sub`, not `Base`. The builder is
+ *   therefore already the *called* (host) class, keeping its scopes and delete events.
+ *   Replacing it with `TokenModel::query()` would prune a host's un-configured subclass AS
+ *   the packaged base class.
+ *
+ * This is jwt's rejection reason recurring on a *model* (jwt's was a non-model, which the
+ * preset has since been narrowed to allow). By the plan's own rule — "if a second package
+ * hits this, it is a package defect, not a row problem" — this is now a testing-package
+ * defect: the preset is an unconditional token ban registered as an `it()` case, so it has
+ * no `->ignoring()` escape and no way to say "this LSB is the correct one". Reported for a
+ * fix there rather than patched here.
+ *
+ * **No coverage is lost by the rejection.** The behaviour the preset would have guarded is
+ * already pinned *behaviourally* — which is strictly stronger than a token scan — by
+ * `tests/Configured/ConfiguredModelTest.php`: "prunes through the configured model, not the
+ * packaged base class" drives a real `model:prune` against a host subclass and asserts the
+ * concrete class of every pruned row. The stray-literal half is likewise covered: every
+ * `refresh-tokens.model` read already goes through the TokenModel seam, pinned by the same
+ * file's swap tests.
+ */
+
+/**
+ * The Dependency Policy as a test. No `alsoAllow`: this package's `require` ships only
+ * php/illuminate/roundly, and the workflow installs test tooling with `--dev`. If this
+ * goes red the shipped graph is wrong — never widen the allow-list to quiet it.
+ */
+ArchPresets::runtimeRequireIsWhitelisted(__DIR__.'/../composer.json');
+
+ArchPresets::noDebuggingLeftovers();
 
 arch('exceptions extend the base runtime exception')
     ->expect('RoundlyConsulting\RefreshTokens\Exceptions')
