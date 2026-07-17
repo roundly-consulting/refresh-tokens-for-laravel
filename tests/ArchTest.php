@@ -200,6 +200,17 @@ ArchPresets::swappableModelsAreNotFinal([
  */
 
 /**
+ * The morph-key seam, guarded. Refresh-tokens has NO polymorphic column — the one
+ * `create_refresh_tokens_table` migration keys sessions off a plain user id, not a morph.
+ * The pin still adopts, and it is NOT vacuous: it scans the real migration file (which
+ * exists and is non-empty) and correctly finds no raw morph, so it passes on evidence
+ * rather than on an empty parse. If a future migration ever adds a `$table->morphs()` here
+ * instead of routing through `morphKey(..., KeyType::fromConfig(...))`, this reds — the same
+ * stop the morph packages get, installed before column 1 rather than after.
+ */
+ArchPresets::morphColumnsUseTheSeam(__DIR__.'/../database/migrations');
+
+/**
  * The Dependency Policy as a test. No `alsoAllow`: this package's `require` ships only
  * php/illuminate/roundly, and the workflow installs test tooling with `--dev`. If this
  * goes red the shipped graph is wrong — never widen the allow-list to quiet it.
