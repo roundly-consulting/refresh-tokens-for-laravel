@@ -72,6 +72,22 @@ final class IssueRefreshTokenAction
      */
     private function assertFamilyIsInheritable(string $familyId, Authenticatable $user): void
     {
+        // `familyId` is caller-supplied (a public IssueContext parameter) and
+        // `family_id` is a **uuid** column, so a malformed value can never name a live
+        // family on any engine — but only a strict engine says so. Postgres rejects the
+        // comparison outright (`invalid input syntax for type uuid`), so without this
+        // guard a host passing a bad family id got a raw QueryException leaking database
+        // internals instead of the documented InvalidTokenFamilyException. SQLite hid it
+        // for the package's whole life by comparing uuid columns as text, which is why
+        // the suite was green.
+        //
+        // Rejecting it here keeps the documented contract identical on every driver and
+        // is not a new rule: it is the column's own type, enforced before the query
+        // rather than by whichever engine happens to be underneath.
+        if (! Str::isUuid($familyId)) {
+            throw InvalidTokenFamilyException::unknownForOwner($familyId);
+        }
+
         $ownedByUser = TokenModel::query()
             ->where('family_id', $familyId)
             ->where(TokenModel::foreignKey(), $user->getAuthIdentifier())
