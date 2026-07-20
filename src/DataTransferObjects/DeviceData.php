@@ -17,7 +17,7 @@ final readonly class DeviceData
         public ?string $browserVersion = null,
         public ?string $os = null,
         public ?string $osVersion = null,
-        public ?DeviceType $deviceType = null,
+        public DeviceType|string|null $deviceType = null,
         public ?bool $isBot = null,
     ) {}
 }

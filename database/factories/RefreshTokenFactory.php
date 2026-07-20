@@ -14,7 +14,7 @@ use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 /**
  * @extends Factory<RefreshToken>
  */
-final class RefreshTokenFactory extends Factory
+class RefreshTokenFactory extends Factory
 {
     protected $model = RefreshToken::class;
 

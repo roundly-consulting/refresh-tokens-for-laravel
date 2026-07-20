@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 
 return [
@@ -10,6 +11,14 @@ return [
     'model' => RefreshToken::class,
     'user_model' => env('REFRESH_TOKENS_USER_MODEL', 'App\\Models\\User'),
     'foreign_key' => env('REFRESH_TOKENS_FOREIGN_KEY', 'user_id'),
+
+    // Cast for the `device_type` column. Defaults to the packaged `DeviceType` enum
+    // (desktop/mobile/tablet/bot/unknown) — the recommended, typed shape where the host
+    // maps its parsed device class to those cases. A host whose device vocabulary is
+    // richer/free-form (e.g. a dedicated user-agent service emitting many device names)
+    // may set this to `'string'` to store the raw value verbatim. Any Eloquent cast
+    // string is accepted; an empty value falls back to the enum.
+    'device_type_cast' => DeviceType::class,
 
     // Primary-key type of the user model, driving the foreign-key column: `bigint`
     // (auto-incrementing, the default; `id` is accepted as an alias), `uuid`, or

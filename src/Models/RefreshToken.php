@@ -7,6 +7,7 @@ namespace RoundlyConsulting\RefreshTokens\Models;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Prunable;
@@ -28,7 +29,7 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * @property string|null $browser_version
  * @property string|null $os
  * @property string|null $os_version
- * @property DeviceType|null $device_type
+ * @property DeviceType|string|null $device_type
  * @property bool|null $is_bot
  * @property string|null $country
  * @property string|null $city
@@ -148,12 +149,27 @@ class RefreshToken extends Model
             'expires_at' => 'immutable_datetime',
             'revoked_at' => 'immutable_datetime',
             'is_bot' => 'boolean',
-            'device_type' => DeviceType::class,
+            'device_type' => $this->deviceTypeCast(),
             'revoked_reason' => RevocationReason::class,
         ];
     }
 
-    protected static function newFactory(): RefreshTokenFactory
+    /**
+     * The cast applied to `device_type`. Defaults to the {@see DeviceType} enum; a host
+     * with a free-form device vocabulary can set `refresh-tokens.device_type_cast` to
+     * `'string'` (or any Eloquent cast) to store the raw value verbatim.
+     */
+    protected function deviceTypeCast(): string
+    {
+        $cast = config('refresh-tokens.device_type_cast', DeviceType::class);
+
+        return is_string($cast) && $cast !== '' ? $cast : DeviceType::class;
+    }
+
+    /**
+     * @return Factory<RefreshToken>
+     */
+    protected static function newFactory(): Factory
     {
         return RefreshTokenFactory::new();
     }
