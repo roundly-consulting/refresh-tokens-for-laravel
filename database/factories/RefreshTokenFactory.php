@@ -7,6 +7,7 @@ namespace RoundlyConsulting\RefreshTokens\Database\Factories;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
@@ -24,11 +25,14 @@ class RefreshTokenFactory extends Factory
     public function definition(): array
     {
         return [
-            'user_id' => $this->faker->numberBetween(1, 100000),
+            // A placeholder owner; use forOwner() to attach a real model.
+            'owner_type' => 'App\\Models\\User',
+            'owner_id' => $this->faker->numberBetween(1, 100000),
             // Never a real plaintext — a random 64-char hex digest stands in for one.
             'token_hash' => hash('sha256', Str::random(64)),
             'family_id' => (string) Str::uuid(),
             'access_reference' => Str::random(32),
+            'family_started_at' => CarbonImmutable::now(),
             'expires_at' => CarbonImmutable::now()->addDays(30),
             'revoked_at' => null,
             'revoked_reason' => null,
@@ -57,10 +61,11 @@ class RefreshTokenFactory extends Factory
         ]);
     }
 
-    public function forUser(Authenticatable $user): self
+    public function forOwner(Authenticatable&Model $owner): self
     {
         return $this->state(fn (): array => [
-            'user_id' => $user->getAuthIdentifier(),
+            'owner_type' => $owner->getMorphClass(),
+            'owner_id' => $owner->getAuthIdentifier(),
         ]);
     }
 }

@@ -21,6 +21,11 @@ use SensitiveParameter;
  *
  * Failure modes collapse to a single indistinguishable outcome — `null` — so a caller
  * cannot tell unknown from expired from revoked from race-lost.
+ *
+ * Given an `$ownerType` (an owner morph class) the lookup is scoped to it: a token
+ * belonging to another owner type is invisible — null, not claimed, no family
+ * revoke, no event. Presenting a user's token at a client-only refresh endpoint
+ * must neither burn the user's session nor count as reuse.
  */
 final class RedeemRefreshTokenAction
 {
@@ -29,11 +34,15 @@ final class RedeemRefreshTokenAction
         private readonly RevokeTokenFamilyAction $revokeFamily,
     ) {}
 
-    public function execute(#[SensitiveParameter] string $plain): ?RedemptionResult
+    public function execute(#[SensitiveParameter] string $plain, ?string $ownerType = null): ?RedemptionResult
     {
-        $row = TokenModel::query()
-            ->where('token_hash', $this->hasher->hash($plain))
-            ->first();
+        $lookup = TokenModel::query()->where('token_hash', $this->hasher->hash($plain));
+
+        if ($ownerType !== null) {
+            $lookup->where('owner_type', $ownerType);
+        }
+
+        $row = $lookup->first();
 
         if ($row === null) {
             return null;
@@ -78,18 +87,18 @@ final class RedeemRefreshTokenAction
         $row->revoked_at = $now;
         $row->revoked_reason = RevocationReason::Rotated;
 
-        $user = $row->owner;
+        $owner = $row->owner;
 
-        // The row was claimed but its owner is gone (e.g. the user was deleted after
+        // The row was claimed but its owner is gone (e.g. the owner was deleted after
         // issue). The token stays revoked; there is nothing to hand back and no
         // successful-redeem signal to emit.
-        if (! $user instanceof Authenticatable) {
+        if (! $owner instanceof Authenticatable) {
             return null;
         }
 
-        Event::dispatch(new RefreshTokenRedeemed($row->getKey(), $row->family_id, $user->getAuthIdentifier()));
+        Event::dispatch(new RefreshTokenRedeemed($row->getKey(), $row->family_id, $row->owner_type, $row->owner_id));
 
-        return new RedemptionResult($user, $row->family_id, $row);
+        return new RedemptionResult($owner, $row->family_id, $row);
     }
 
     private function withinGrace(CarbonImmutable $revokedAt, CarbonImmutable $now): bool

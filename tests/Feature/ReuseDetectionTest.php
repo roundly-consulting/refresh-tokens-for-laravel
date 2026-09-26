@@ -6,6 +6,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenReuseDetected;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
@@ -24,7 +25,7 @@ it('revokes the whole family and fires the signal when a rotated token is reused
     $user = User::factory()->create();
 
     $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $rotation = RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+    $rotation = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     // Present the already-rotated token A again — theft signal.
     expect(RefreshToken::redeem($a->plainText))->toBeNull();
@@ -42,7 +43,8 @@ it('revokes the whole family and fires the signal when a rotated token is reused
     Event::assertDispatched(
         RefreshTokenReuseDetected::class,
         fn (RefreshTokenReuseDetected $e): bool => $e->familyId === $a->token->family_id
-            && $e->userId === $user->id
+            && $e->ownerType === User::class
+            && $e->ownerId === $user->id
             && $e->revokedCount === 1,
     );
 });
@@ -52,7 +54,7 @@ it('does not re-fire the reuse signal when a dead token is replayed', function (
     $user = User::factory()->create();
 
     $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+    RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     RefreshToken::redeem($a->plainText); // first reuse: family revoked, one signal
     RefreshToken::redeem($a->plainText); // replayed dead token: revokes nothing
@@ -69,7 +71,7 @@ it('treats a re-presented token as benign within the grace window', function ():
     $user = User::factory()->create();
 
     $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $rotation = RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+    $rotation = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     expect(RefreshToken::redeem($a->plainText))->toBeNull();
 
@@ -89,7 +91,7 @@ it('stays benign exactly at the grace boundary and turns to reuse just past it',
     // in-memory clock agree exactly at the grace boundary.
     Carbon::setTestNow(now()->startOfSecond());
     $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+    RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     // Exactly at the boundary (revoked_at + grace): still benign.
     Carbon::setTestNow(now()->addSeconds(30));

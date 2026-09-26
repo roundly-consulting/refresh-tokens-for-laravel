@@ -40,7 +40,14 @@ final class RevokeSessionAction
             $this->revoker->revoke($session->access_reference);
         }
 
-        Event::dispatch(new SessionRevoked($session->getKey(), $session->access_reference));
+        Event::dispatch(new SessionRevoked(
+            $session->getKey(),
+            $session->family_id,
+            $session->owner_type,
+            $session->owner_id,
+            $reason,
+            $session->access_reference,
+        ));
 
         return true;
     }

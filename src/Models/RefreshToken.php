@@ -6,12 +6,13 @@ namespace RoundlyConsulting\RefreshTokens\Models;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Prunable;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RoundlyConsulting\RefreshTokens\Database\Factories\RefreshTokenFactory;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
@@ -20,7 +21,8 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
  * @property int $id
- * @property int|string $user_id
+ * @property string $owner_type
+ * @property int|string $owner_id
  * @property string $token_hash
  * @property string $family_id
  * @property string|null $access_reference
@@ -35,6 +37,9 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * @property string|null $city
  * @property string|null $country_code
  * @property string|null $ip_address
+ * @property CarbonImmutable|null $family_started_at
+ * @property CarbonImmutable|null $absolute_expires_at
+ * @property array<string, mixed>|null $meta
  * @property RevocationReason|null $revoked_reason
  * @property CarbonImmutable $expires_at
  * @property CarbonImmutable|null $revoked_at
@@ -75,16 +80,37 @@ class RefreshToken extends Model
     }
 
     /**
-     * @return BelongsTo<Model, $this>
+     * When the session (family) began: the stored `family_started_at`, inherited
+     * verbatim across rotation. A row predating that column falls back to its own
+     * creation time.
      */
-    public function owner(): BelongsTo
+    public function sessionStartedAt(): CarbonImmutable
     {
-        $userModel = config('refresh-tokens.user_model', 'App\\Models\\User');
+        return $this->family_started_at ?? CarbonImmutable::instance($this->created_at);
+    }
 
-        /** @var class-string<Model> $userModel */
-        $userModel = is_string($userModel) && $userModel !== '' ? $userModel : 'App\\Models\\User';
+    /**
+     * The polymorphic owner — any Authenticatable Eloquent model (users, clients, …).
+     *
+     * @return MorphTo<Model, $this>
+     */
+    public function owner(): MorphTo
+    {
+        return $this->morphTo('owner');
+    }
 
-        return $this->belongsTo($userModel, TokenModel::foreignKey());
+    /**
+     * Rows belonging to exactly this owner: its morph class AND its id. Scoping by id
+     * alone would collide across owner tables (user #7 and client #7).
+     *
+     * @param  Builder<RefreshToken>  $query
+     * @return Builder<RefreshToken>
+     */
+    public function scopeOwnedBy(Builder $query, Authenticatable&Model $owner): Builder
+    {
+        return $query
+            ->where('owner_type', $owner->getMorphClass())
+            ->where('owner_id', $owner->getAuthIdentifier());
     }
 
     /**
@@ -148,6 +174,9 @@ class RefreshToken extends Model
         return [
             'expires_at' => 'immutable_datetime',
             'revoked_at' => 'immutable_datetime',
+            'family_started_at' => 'immutable_datetime',
+            'absolute_expires_at' => 'immutable_datetime',
+            'meta' => 'array',
             'is_bot' => 'boolean',
             'device_type' => $this->deviceTypeCast(),
             'revoked_reason' => RevocationReason::class,

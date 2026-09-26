@@ -8,8 +8,8 @@ use RoundlyConsulting\Testing\Database\DriverMatrix;
 
 /**
  * This package ships exactly one migration and it declares **no foreign key**: the owner
- * column is a plain indexed key, because the host's users table is not ours to constrain
- * (and its primary key may be bigint, uuid or ulid — see `refresh-tokens.key_type`).
+ * is a polymorphic `owner_type` + `owner_id` pair (any Authenticatable model), and a morph
+ * cannot carry a foreign key — nor are the host's owner tables ours to constrain.
  *
  * That shape decides what is worth pinning here, and it is worth being explicit:
  *

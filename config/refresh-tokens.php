@@ -9,8 +9,6 @@ return [
     // Storage
     'table' => env('REFRESH_TOKENS_TABLE', 'refresh_tokens'),
     'model' => RefreshToken::class,
-    'user_model' => env('REFRESH_TOKENS_USER_MODEL', 'App\\Models\\User'),
-    'foreign_key' => env('REFRESH_TOKENS_FOREIGN_KEY', 'user_id'),
 
     // Cast for the `device_type` column. Defaults to the packaged `DeviceType` enum
     // (desktop/mobile/tablet/bot/unknown) — the recommended, typed shape where the host
@@ -20,19 +18,25 @@ return [
     // string is accepted; an empty value falls back to the enum.
     'device_type_cast' => DeviceType::class,
 
-    // Primary-key type of the user model, driving the foreign-key column: `bigint`
-    // (auto-incrementing, the default; `id` is accepted as an alias), `uuid`, or
-    // `ulid`. Set this before the first migration to match a UUID/ULID-keyed user
-    // model. An unrecognized value falls back to `bigint` — a typo must never
-    // silently reshape (or break) the schema.
+    // Tokens hang off a polymorphic owner (`owner_type` + `owner_id`), so any
+    // Authenticatable Eloquent model — users, clients, admins — can hold sessions in
+    // the one table. This is the primary-key type shared by EVERY owner model, driving
+    // the `owner_id` column: `bigint` (auto-incrementing, the default; `id` is accepted
+    // as an alias), `uuid`, or `ulid`. Set it before the first migration. Owner models
+    // with different key types cannot share the table. An unrecognized value falls back
+    // to `bigint` — a typo must never silently reshape (or break) the schema.
     'key_type' => env('REFRESH_TOKENS_KEY_TYPE', 'bigint'),
 
     // Token lifetime & shape
+    // Both lifetimes are defaults: a single issue may override them through
+    // IssueContext `ttl` / `absoluteTtl` (e.g. a per-guard lifetime).
     'ttl' => (int) env('REFRESH_TOKENS_TTL', 2_592_000), // seconds; 30 days (sliding)
 
-    // Absolute session lifetime cap. Every rotation clamps the replacement's expiry
-    // to the family root's creation time plus this many seconds, so a continuously
-    // rotated (or stolen-but-active) session cannot live forever. 0 disables the cap.
+    // Absolute session lifetime cap. When a family is rooted its hard end
+    // (`absolute_expires_at` = start + this many seconds) is stored on the row and
+    // inherited verbatim by every rotation, which clamps each replacement's expiry to
+    // it — a continuously rotated (or stolen-but-active) session cannot live forever.
+    // 0 disables the cap.
     'absolute_ttl' => (int) env('REFRESH_TOKENS_ABSOLUTE_TTL', 7_776_000), // seconds; 90 days
 
     'token_length' => (int) env('REFRESH_TOKENS_LENGTH', 64), // base64url chars (~384 bits); min 32, max 4096

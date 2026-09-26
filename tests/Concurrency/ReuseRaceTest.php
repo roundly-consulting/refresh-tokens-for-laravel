@@ -6,6 +6,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
@@ -48,7 +49,7 @@ it('self-revokes a replacement issued into a family reuse killed around the inse
         ]);
     });
 
-    $rotation = RefreshToken::rotate($root->plainText, linkedTo: 'acc-b');
+    $rotation = RefreshToken::rotate($root->plainText, new RotationContext(accessReference: 'acc-b'));
 
     expect($raced)->toBeTrue()
         ->and($rotation)->toBeNull();
@@ -72,7 +73,7 @@ it('self-revokes a replacement issued into a family reuse killed around the inse
 it('re-scans and revokes a family member inserted after the first revoke snapshot', function (): void {
     $user = User::factory()->create();
     $root = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $rotation = RefreshToken::rotate($root->plainText, linkedTo: 'acc-b');
+    $rotation = RefreshToken::rotate($root->plainText, new RotationContext(accessReference: 'acc-b'));
     $replacement = $rotation->newRefreshToken->token;
 
     $raced = false;
@@ -87,7 +88,7 @@ it('re-scans and revokes a family member inserted after the first revoke snapsho
 
         // A late winner commits a fresh active member after the snapshot was taken.
         RefreshTokenModel::factory()
-            ->forUser($user)
+            ->forOwner($user)
             ->forFamily($replacement->family_id)
             ->create(['access_reference' => 'acc-late']);
     });

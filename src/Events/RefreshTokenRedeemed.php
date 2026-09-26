@@ -14,6 +14,7 @@ final class RefreshTokenRedeemed
     public function __construct(
         public int|string $tokenId,
         public string $familyId,
-        public int|string $userId,
+        public string $ownerType,
+        public int|string $ownerId,
     ) {}
 }

@@ -10,13 +10,16 @@ use Illuminate\Support\Collection;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
-use SensitiveParameter;
 
 /**
- * Revoke every active session for an owner except the one holding the current access
- * reference. Passing a null current reference revokes them all. Returns the count.
+ * Revoke every active session of an owner except one, addressed by family id
+ * ("log out my other devices"). A null — or malformed, hence matching nothing —
+ * `$keepFamilyId` revokes them all: failing closed is the safe reading of an
+ * unrecognisable "current session". The kept family is compared in PHP, never in
+ * SQL, so a malformed id cannot reach a strict engine's uuid column. Returns the
+ * number of rows revoked.
  */
-final class RevokeOtherSessionsAction
+final class RevokeAllSessionsExceptAction
 {
     public function __construct(
         private readonly RevokeSessionAction $revokeSession,
@@ -24,7 +27,7 @@ final class RevokeOtherSessionsAction
 
     public function execute(
         Authenticatable&Model $owner,
-        #[SensitiveParameter] ?string $currentAccessReference,
+        ?string $keepFamilyId,
         RevocationReason $reason = RevocationReason::LogoutAll,
     ): int {
         /** @var Collection<int, RefreshToken> $sessions */
@@ -33,10 +36,11 @@ final class RevokeOtherSessionsAction
             ->active()
             ->get();
 
+        $keep = $keepFamilyId !== null ? strtolower($keepFamilyId) : null;
         $revoked = 0;
 
         foreach ($sessions as $session) {
-            if ($currentAccessReference !== null && $session->access_reference === $currentAccessReference) {
+            if ($keep !== null && strtolower($session->family_id) === $keep) {
                 continue;
             }
 

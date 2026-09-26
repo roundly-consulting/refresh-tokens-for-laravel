@@ -20,4 +20,8 @@ enum RevocationReason: string
     case ReuseDetected = 'reuse_detected';  // family revoke on a theft signal
     case Expired = 'expired';               // swept past expiry
     case Manual = 'manual';                 // admin / host revocation
+    case CredentialsChanged = 'credentials_changed'; // password / 2FA / passkey change
+    case AccountDisabled = 'account_disabled';       // owner disabled or deleted
+    case SessionLimit = 'session_limit';             // evicted by a per-owner session cap
+    case Security = 'security';                      // any other security response
 }

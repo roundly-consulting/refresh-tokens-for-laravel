@@ -14,6 +14,7 @@ use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationExceptio
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
+use RoundlyConsulting\RefreshTokens\Support\RefreshTokenBlueprint;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -128,16 +129,16 @@ it('falls back to bigint for an unrecognized or non-string key type', function (
     expect(TokenModel::keyType())->toBe(KeyType::BigInt);
 })->with(['guid', '', 123, null]);
 
-it('adds a foreign-key column for every key type', function (KeyType $type): void {
+it('adds the polymorphic owner columns for every key type', function (KeyType $type): void {
     $table = 'rt_keytype_probe';
     Schema::dropIfExists($table);
 
     Schema::create($table, function (Blueprint $blueprint) use ($type): void {
-        $blueprint->id();
-        $blueprint->ownerKey('user_id', $type);
+        RefreshTokenBlueprint::columns($blueprint, $type);
     });
 
-    expect(Schema::hasColumn($table, 'user_id'))->toBeTrue();
+    expect(Schema::hasColumns($table, ['owner_type', 'owner_id', 'family_started_at', 'absolute_expires_at', 'meta']))->toBeTrue()
+        ->and(Schema::hasColumn($table, 'user_id'))->toBeFalse();
 
     Schema::drop($table);
 })->with([KeyType::BigInt, KeyType::Uuid, KeyType::Ulid]);
@@ -150,17 +151,14 @@ it('has a no-op default access-token revoker', function (): void {
     expect(true)->toBeTrue();
 });
 
-it('resolves the configured model class, table and foreign key', function (): void {
+it('resolves the configured model class and table', function (): void {
     expect(TokenModel::class())->toBe(RefreshTokenModel::class)
         ->and(TokenModel::make())->toBeInstanceOf(RefreshTokenModel::class)
-        ->and(TokenModel::table())->toBe('refresh_tokens')
-        ->and(TokenModel::foreignKey())->toBe('user_id');
+        ->and(TokenModel::table())->toBe('refresh_tokens');
 
     config()->set('refresh-tokens.table', '');
-    config()->set('refresh-tokens.foreign_key', '');
 
-    expect(TokenModel::table())->toBe('refresh_tokens')
-        ->and(TokenModel::foreignKey())->toBe('user_id');
+    expect(TokenModel::table())->toBe('refresh_tokens');
 });
 
 it('throws when the configured model is not a model class', function (): void {
@@ -193,7 +191,7 @@ it('issues via the fluent builder filling ip and user agent from a request', fun
     $familyId = (string) Str::uuid();
 
     // Seed a live root in the family so inheriting it passes the ownership check.
-    RefreshTokenModel::factory()->forUser($user)->forFamily($familyId)->create();
+    RefreshTokenModel::factory()->forOwner($user)->forFamily($familyId)->create();
 
     $new = RefreshToken::for($user)->fromRequest($request)->inFamily($familyId)->issue();
 

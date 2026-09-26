@@ -76,6 +76,15 @@ it('treats a claim lost within the grace window as a benign retry', function ():
         ->and($sibling->token->fresh()->revoked_at)->toBeNull();
 });
 
+it('keeps the one-winner guarantee under owner-type scoping', function (): void {
+    $user = User::factory()->create();
+    $new = RefreshToken::issue($user, new IssueContext);
+
+    $results = array_map(fn (): mixed => RefreshToken::redeem($new->plainText, User::class), range(1, 5));
+
+    expect(array_filter($results, fn (mixed $r): bool => $r !== null))->toHaveCount(1);
+});
+
 it('serialises exactly one winner across many redemptions of the same token', function (): void {
     $user = User::factory()->create();
     $new = RefreshToken::issue($user, new IssueContext);

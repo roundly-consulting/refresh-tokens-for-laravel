@@ -57,7 +57,7 @@ it('binds the manager, both contracts and the default revoker', function (): voi
 });
 
 it('registers the toolkit blueprint macros before the migrator runs', function (): void {
-    expect(Blueprint::hasMacro('ownerKey'))->toBeTrue();
+    expect(Blueprint::hasMacro('morphKey'))->toBeTrue();
 });
 
 it('reports the package in about', function (): void {
@@ -66,8 +66,8 @@ it('reports the package in about', function (): void {
 
     expect($output)->toContain('Token model')
         ->and($output)->toContain('RefreshToken')
-        ->and($output)->toContain('Owner key')
-        ->and($output)->toContain('user_id (bigint)')
+        ->and($output)->toContain('Owner')
+        ->and($output)->toContain('morph (bigint)')
         ->and($output)->toContain('sha256')
         ->and($output)->toContain('NONE (no-op)');
 });

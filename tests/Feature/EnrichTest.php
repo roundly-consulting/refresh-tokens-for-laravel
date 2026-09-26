@@ -12,7 +12,7 @@ use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 it('enriches a session with device and location without touching auth columns', function (): void {
     $user = User::factory()->create();
-    $session = RefreshTokenModel::factory()->forUser($user)->create([
+    $session = RefreshTokenModel::factory()->forOwner($user)->create([
         'token_hash' => hash('sha256', 'seed'),
         'access_reference' => 'acc-keep',
     ]);
@@ -56,7 +56,7 @@ it('enriches a session with device and location without touching auth columns', 
 
 it('enriches device-only when no location is supplied', function (): void {
     $user = User::factory()->create();
-    $session = RefreshTokenModel::factory()->forUser($user)->create();
+    $session = RefreshTokenModel::factory()->forOwner($user)->create();
 
     RefreshToken::enrich($session->getKey(), new DeviceData(deviceType: DeviceType::Mobile));
 
@@ -66,7 +66,7 @@ it('enriches device-only when no location is supplied', function (): void {
 
 it('accepts the model directly and equals enrich-by-id', function (): void {
     $user = User::factory()->create();
-    $session = RefreshTokenModel::factory()->forUser($user)->create();
+    $session = RefreshTokenModel::factory()->forOwner($user)->create();
 
     RefreshToken::enrich($session, new DeviceData(browser: 'Safari', deviceType: DeviceType::Tablet));
 
@@ -76,7 +76,7 @@ it('accepts the model directly and equals enrich-by-id', function (): void {
 
 it('preserves stored geo when a later enrich is device-only', function (): void {
     $user = User::factory()->create();
-    $session = RefreshTokenModel::factory()->forUser($user)->create();
+    $session = RefreshTokenModel::factory()->forOwner($user)->create();
 
     // First enrich writes geo.
     RefreshToken::enrich($session, new DeviceData(browser: 'Chrome'), new LocationData(

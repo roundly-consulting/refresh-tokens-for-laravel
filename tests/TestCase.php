@@ -29,7 +29,7 @@ abstract class TestCase extends PackageTestCase
 
     /**
      * The token table, named by provider class (never by filename), plus the host-owned
-     * `users` fixture the tokens hang off.
+     * `users` and `clients` fixtures — two owner models whose ids collide on purpose.
      *
      * @return list<class-string<ServiceProvider>|string>
      */
@@ -39,18 +39,5 @@ abstract class TestCase extends PackageTestCase
             __DIR__.'/database/migrations',
             RefreshTokensServiceProvider::class,
         ];
-    }
-
-    /**
-     * Applied BEFORE the providers boot — the only correct place, and load-bearing here:
-     * the migration reads `refresh-tokens.user_model` (through `TokenModel::foreignKey()`
-     * and `::keyType()`) to shape the foreign-key column, so setting it in a test body
-     * would be read only after the table already existed.
-     *
-     * @return array<string, mixed>
-     */
-    protected function configBeforeBoot(): array
-    {
-        return ['refresh-tokens.user_model' => Fixtures\User::class];
     }
 }

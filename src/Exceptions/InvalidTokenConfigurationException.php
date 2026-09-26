@@ -6,8 +6,9 @@ namespace RoundlyConsulting\RefreshTokens\Exceptions;
 
 /**
  * Thrown when a security-relevant config value is unsafe: an unsupported hashing
- * algorithm or a token length below the enforced minimum. Failing loudly stops a
- * one-line env typo from silently degrading the token store.
+ * algorithm, a token length outside the bounds, or a per-issue lifetime override
+ * out of range. Failing loudly stops a one-line typo from silently degrading the
+ * token store.
  */
 final class InvalidTokenConfigurationException extends RefreshTokenException
 {
@@ -38,6 +39,22 @@ final class InvalidTokenConfigurationException extends RefreshTokenException
             'refresh-tokens token_length [%d] is above the maximum of %d.',
             $length,
             $maximum,
+        ));
+    }
+
+    public static function invalidTtl(int $ttl): self
+    {
+        return new self(sprintf(
+            'refresh-tokens issue ttl [%d] must be at least 1 second.',
+            $ttl,
+        ));
+    }
+
+    public static function invalidAbsoluteTtl(int $ttl): self
+    {
+        return new self(sprintf(
+            'refresh-tokens issue absoluteTtl [%d] must be 0 (uncapped) or more seconds.',
+            $ttl,
         ));
     }
 }

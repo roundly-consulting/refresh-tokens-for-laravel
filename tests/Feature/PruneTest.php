@@ -14,13 +14,13 @@ it('prunes rows revoked or expired past the retention window and keeps live ones
 
     // Long-dead rows (should be pruned).
     Carbon::setTestNow(now()->subDays(60));
-    RefreshTokenModel::factory()->forUser($user)->revoked()->create();
-    RefreshTokenModel::factory()->forUser($user)->expired()->create();
+    RefreshTokenModel::factory()->forOwner($user)->revoked()->create();
+    RefreshTokenModel::factory()->forOwner($user)->expired()->create();
 
     // Recent + active rows (should survive).
     Carbon::setTestNow();
-    $active = RefreshTokenModel::factory()->forUser($user)->create();
-    $recentlyRevoked = RefreshTokenModel::factory()->forUser($user)->revoked()->create();
+    $active = RefreshTokenModel::factory()->forOwner($user)->create();
+    $recentlyRevoked = RefreshTokenModel::factory()->forOwner($user)->revoked()->create();
 
     $this->artisan('refresh-tokens:prune')
         ->assertSuccessful();
@@ -34,7 +34,7 @@ it('honours the --days override', function (): void {
     $user = User::factory()->create();
 
     Carbon::setTestNow(now()->subDays(10));
-    RefreshTokenModel::factory()->forUser($user)->revoked()->create();
+    RefreshTokenModel::factory()->forOwner($user)->revoked()->create();
     Carbon::setTestNow();
 
     // Default retention is 30 days: nothing pruned.
@@ -49,7 +49,7 @@ it('honours the --days override', function (): void {
 it('rejects --days below the one-day floor to preserve reuse evidence', function (): void {
     $user = User::factory()->create();
     Carbon::setTestNow(now()->subHours(2));
-    RefreshTokenModel::factory()->forUser($user)->revoked()->create();
+    RefreshTokenModel::factory()->forOwner($user)->revoked()->create();
     Carbon::setTestNow();
 
     $this->artisan('refresh-tokens:prune --days=0')->assertFailed();
@@ -67,7 +67,7 @@ it('floors config-driven retention at one day', function (): void {
     $user = User::factory()->create();
 
     Carbon::setTestNow(now()->subHours(2));
-    RefreshTokenModel::factory()->forUser($user)->revoked()->create();
+    RefreshTokenModel::factory()->forOwner($user)->revoked()->create();
     Carbon::setTestNow();
 
     // A retention of 0 would delete the 2-hour-old row; the floor keeps it.
@@ -80,9 +80,9 @@ it('force-deletes via the model prunable query (model:prune)', function (): void
     $user = User::factory()->create();
 
     Carbon::setTestNow(now()->subDays(90));
-    RefreshTokenModel::factory()->forUser($user)->expired()->create();
+    RefreshTokenModel::factory()->forOwner($user)->expired()->create();
     Carbon::setTestNow();
-    RefreshTokenModel::factory()->forUser($user)->create();
+    RefreshTokenModel::factory()->forOwner($user)->create();
 
     $this->artisan('model:prune', ['--model' => [RefreshTokenModel::class]])->assertSuccessful();
 

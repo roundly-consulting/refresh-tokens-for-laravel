@@ -5,22 +5,23 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Actions;
 
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
- * The user's active sessions (not revoked, not expired), newest first.
+ * The owner's active sessions (not revoked, not expired), newest first.
  */
 final class ListSessionsAction
 {
     /**
      * @return Collection<int, RefreshToken>
      */
-    public function execute(Authenticatable $user): Collection
+    public function execute(Authenticatable&Model $owner): Collection
     {
         return TokenModel::query()
-            ->where(TokenModel::foreignKey(), $user->getAuthIdentifier())
+            ->ownedBy($owner)
             ->active()
             ->latest()
             ->latest('id')

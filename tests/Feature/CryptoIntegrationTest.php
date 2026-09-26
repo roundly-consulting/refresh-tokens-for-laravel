@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
@@ -37,7 +38,7 @@ it('issues, redeems, rotates and reuse-detects on every algorithm and pepper', f
         ->and($a->token->token_hash)->not->toContain($a->plainText);
 
     // Rotate: the replacement is live, the presented token is dead.
-    $b = RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+    $b = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     expect($b)->not->toBeNull()
         ->and($b->newRefreshToken->plainText)->not->toBe($a->plainText)
@@ -45,7 +46,7 @@ it('issues, redeems, rotates and reuse-detects on every algorithm and pepper', f
         ->and($b->newRefreshToken->token->fresh()->revoked_at)->toBeNull();
 
     // The replacement itself rotates — the digest lookup still finds its row.
-    $c = RefreshToken::rotate($b->newRefreshToken->plainText, linkedTo: 'acc-c');
+    $c = RefreshToken::rotate($b->newRefreshToken->plainText, new RotationContext(accessReference: 'acc-c'));
 
     expect($c)->not->toBeNull()
         ->and($c->redeemedFamilyId)->toBe($a->token->family_id);

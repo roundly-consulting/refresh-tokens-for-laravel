@@ -7,6 +7,9 @@ use RoundlyConsulting\RefreshTokens\Actions\RevokeSessionAction;
 use RoundlyConsulting\RefreshTokens\Actions\RevokeTokenFamilyAction;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
+use RoundlyConsulting\RefreshTokens\Contracts\SessionManager;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Exceptions\RefreshTokenException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\RefreshTokens;
@@ -155,12 +158,9 @@ ArchPresets::finalByDefault('RoundlyConsulting\RefreshTokens', [
 ]);
 
 /**
- * `refresh-tokens.user_model` is deliberately NOT listed. It is not a swappable *package*
- * model: it names the HOST's own user class, which this package never ships, never
- * subclasses and cannot pin a default for (the default is the literal string
- * 'App\Models\User', a class that does not exist here). `toHonourModelSwap` and this
- * preset both assert against a packaged model and its shipped default, so neither has
- * anything to say about it. The one real seam is `refresh-tokens.model`.
+ * The one swappable model seam is `refresh-tokens.model`. Owners are polymorphic (any
+ * Authenticatable model, resolved through `owner_type`), so there is no configured owner
+ * class to pin.
  */
 ArchPresets::swappableModelsAreNotFinal([
     RefreshTokenModel::class => 'refresh-tokens.model',
@@ -200,13 +200,12 @@ ArchPresets::swappableModelsAreNotFinal([
  */
 
 /**
- * The morph-key seam, guarded. Refresh-tokens has NO polymorphic column — the one
- * `create_refresh_tokens_table` migration keys sessions off a plain user id, not a morph.
- * The pin still adopts, and it is NOT vacuous: it scans the real migration file (which
- * exists and is non-empty) and correctly finds no raw morph, so it passes on evidence
- * rather than on an empty parse. If a future migration ever adds a `$table->morphs()` here
- * instead of routing through `morphKey(..., KeyType::fromConfig(...))`, this reds — the same
- * stop the morph packages get, installed before column 1 rather than after.
+ * The morph-key seam, guarded — and now guarding a real morph: the owner is polymorphic
+ * (`owner_type` + `owner_id`). The migration reaches it through
+ * `RefreshTokenBlueprint::columns()` → `morphKey('owner', KeyType::fromConfig(...))`, so the
+ * id column follows `refresh-tokens.key_type`. It scans the real migration file (which exists
+ * and is non-empty), so it passes on evidence rather than on an empty parse; a raw
+ * `$table->morphs()` in any migration here reds.
  */
 ArchPresets::morphColumnsUseTheSeam(__DIR__.'/../database/migrations');
 
@@ -250,7 +249,7 @@ it('marks every plaintext parameter as sensitive', function (array $target): voi
     $parameters = (new ReflectionMethod($class, $method))->getParameters();
     $plain = array_values(array_filter(
         $parameters,
-        fn (ReflectionParameter $p): bool => in_array($p->getName(), ['plain', 'accessReference'], true),
+        fn (ReflectionParameter $p): bool => in_array($p->getName(), ['plain', 'accessReference', 'currentAccessReference'], true),
     ));
 
     expect($plain)->not->toBeEmpty();
@@ -260,8 +259,12 @@ it('marks every plaintext parameter as sensitive', function (array $target): voi
     }
 })->with([
     [[RefreshTokenManager::class, 'redeem']],
+    [[RefreshTokenManager::class, 'rotate']],
     [[RefreshTokenManager::class, 'revoke']],
     [[RefreshTokens::class, 'redeem']],
     [[TokenHasher::class, 'hash']],
     [[AccessTokenRevoker::class, 'revoke']],
+    [[IssueContext::class, '__construct']],
+    [[RotationContext::class, '__construct']],
+    [[SessionManager::class, 'revokeOthers']],
 ]);

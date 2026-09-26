@@ -11,8 +11,7 @@ use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 
 /**
  * The single resolution point for the storage seam: the model configured at
- * `refresh-tokens.model`, the table it lives in, the owner foreign key, and that
- * key's type.
+ * `refresh-tokens.model`, the table it lives in, and the owner key's type.
  *
  * The model lookup wraps the toolkit's {@see ModelResolver} (which validates the
  * configured value really is an Eloquent model) and narrows the result to this
@@ -54,15 +53,9 @@ final class TokenModel
         return is_string($table) && $table !== '' ? $table : 'refresh_tokens';
     }
 
-    public static function foreignKey(): string
-    {
-        $key = config('refresh-tokens.foreign_key', 'user_id');
-
-        return is_string($key) && $key !== '' ? $key : 'user_id';
-    }
-
     /**
-     * The host user model's primary-key type, driving the foreign-key column shape.
+     * The primary-key type shared by every owner model, driving the `owner_id`
+     * column shape.
      *
      * Misconfiguration never throws: an unrecognized value silently falls back to
      * bigint, so a one-line env typo can't break the schema. The value `id` — what

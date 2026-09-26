@@ -12,13 +12,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $foreignKey = TokenModel::foreignKey();
         $keyType = TokenModel::keyType();
 
         Schema::create(
             TokenModel::table(),
-            function (Blueprint $blueprint) use ($foreignKey, $keyType): void {
-                RefreshTokenBlueprint::columns($blueprint, $foreignKey, $keyType);
+            function (Blueprint $blueprint) use ($keyType): void {
+                RefreshTokenBlueprint::columns($blueprint, $keyType);
             },
         );
     }

@@ -14,6 +14,7 @@ it('exposes translated labels for revocation reasons', function (): void {
 it('enumerates every revocation reason', function (): void {
     expect(RevocationReason::values()->all())->toBe([
         'rotated', 'logout', 'logout_all', 'reuse_detected', 'expired', 'manual',
+        'credentials_changed', 'account_disabled', 'session_limit', 'security',
     ]);
 });
 

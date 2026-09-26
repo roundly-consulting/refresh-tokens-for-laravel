@@ -34,7 +34,7 @@ final class RefreshTokensServiceProvider extends PackageServiceProvider
     {
         parent::register();
 
-        // Registered here, not in boot(), so the `ownerKey()` schema macro the
+        // Registered here, not in boot(), so the `morphKey()` schema macro the
         // migration calls exists before the migrator can run.
         $this->registerBlueprintMacros();
 
@@ -69,7 +69,7 @@ final class RefreshTokensServiceProvider extends PackageServiceProvider
         return [
             'Token model' => class_basename(TokenModel::class()),
             'Table' => TokenModel::table() === 'refresh_tokens' ? 'DEFAULT' : 'CUSTOM',
-            'Owner key' => TokenModel::foreignKey().' ('.TokenModel::keyType()->value.')',
+            'Owner' => 'morph ('.TokenModel::keyType()->value.')',
             'Sliding TTL' => $this->seconds('refresh-tokens.ttl', 2_592_000).'s',
             'Absolute TTL' => $absolute === 0 ? 'DISABLED' : $absolute.'s',
             'Token length' => $this->seconds('refresh-tokens.token_length', 64).' chars',

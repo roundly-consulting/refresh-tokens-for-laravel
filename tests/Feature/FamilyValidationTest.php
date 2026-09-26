@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Str;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
@@ -38,7 +39,7 @@ it('rejects grafting a token into another user\'s family', function (): void {
 it('rejects issuing into a reuse-revoked family', function (): void {
     $user = User::factory()->create();
     $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    RefreshToken::rotate($a->plainText, linkedTo: 'acc-b');
+    RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     // Re-presenting the rotated token kills the family via reuse detection.
     RefreshToken::redeem($a->plainText);

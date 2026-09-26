@@ -22,7 +22,7 @@ it('ships exactly the config keys it reads', function (): void {
     expect(__DIR__.'/../../config/refresh-tokens.php')->toSatisfyConfigContract(
         [__DIR__.'/../../src', __DIR__.'/../../database'],
         [
-            // The storage seam (`model`, `table`, `foreign_key`, `key_type`) is read through
+            // The storage seam (`model`, `table`, `key_type`) is read through
             // the toolkit's `ModelResolver::for('refresh-tokens.model', …)` / TokenModel
             // seam rather than a bare `config()` token. Those are real reads that drive the
             // whole schema, but they are not `config(` calls, so the prefix is what makes

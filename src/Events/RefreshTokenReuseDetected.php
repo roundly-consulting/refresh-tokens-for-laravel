@@ -7,14 +7,16 @@ namespace RoundlyConsulting\RefreshTokens\Events;
 /**
  * Fired once when an already-rotated (or revoked) token is presented again — a
  * theft signal. The whole family is revoked; hosts hook this for alerting/audit.
- * `revokedCount` reports how many live family members were revoked in response, so
- * alerting can gauge the blast radius.
+ * `ownerType` (morph class) + `ownerId` identify the account; `revokedCount`
+ * reports how many live family members were revoked in response, so alerting can
+ * gauge the blast radius.
  */
 final class RefreshTokenReuseDetected
 {
     public function __construct(
         public string $familyId,
-        public int|string $userId,
+        public string $ownerType,
+        public int|string $ownerId,
         public int $revokedCount = 0,
     ) {}
 }
