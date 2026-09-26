@@ -136,6 +136,30 @@ it('rejects a newFamilyId that already names a family, of any owner', function (
         ->toThrow(InvalidTokenFamilyException::class, 'already exists');
 });
 
+/*
+ * Family ids are uuids, and a uuid is case-insensitive: Postgres' uuid column says so
+ * (it stores and compares them canonically, lowercase), sqlite/mysql text columns
+ * would not. The package canonicalises them, so every driver answers alike.
+ */
+it('treats family ids case-insensitively on every driver', function (): void {
+    $user = User::factory()->create();
+    $sid = (string) Str::uuid();
+
+    $root = RefreshToken::issue($user, new IssueContext(newFamilyId: strtoupper($sid)));
+
+    expect($root->token->family_id)->toBe($sid)
+        ->and($root->token->fresh()->family_id)->toBe($sid)
+        ->and(RefreshToken::findSession($user, strtoupper($sid))?->is($root->token))->toBeTrue()
+        ->and(fn () => RefreshToken::issue($user, new IssueContext(newFamilyId: strtoupper($sid))))
+        ->toThrow(InvalidTokenFamilyException::class, 'already exists');
+
+    $child = RefreshToken::issue($user, new IssueContext(familyId: strtoupper($sid)));
+
+    expect($child->token->family_id)->toBe($sid)
+        ->and(RefreshToken::revokeSession($user, strtoupper($sid)))->toBeTrue()
+        ->and(RefreshToken::listFor($user))->toBeEmpty();
+});
+
 it('rejects familyId and newFamilyId together', function (): void {
     $user = User::factory()->create();
     $existing = RefreshToken::issue($user, new IssueContext);

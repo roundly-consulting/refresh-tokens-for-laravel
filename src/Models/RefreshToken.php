@@ -135,12 +135,15 @@ class RefreshToken extends Model
     }
 
     /**
+     * Rows of one family. The id is canonicalised (lowercase) first: a uuid is
+     * case-insensitive, and stored family ids are canonical on every driver.
+     *
      * @param  Builder<RefreshToken>  $query
      * @return Builder<RefreshToken>
      */
     public function scopeForFamily(Builder $query, string $familyId): Builder
     {
-        return $query->where('family_id', $familyId);
+        return $query->where('family_id', strtolower($familyId));
     }
 
     /**

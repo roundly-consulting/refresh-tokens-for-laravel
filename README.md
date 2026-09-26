@@ -233,7 +233,8 @@ $new = RefreshToken::for($client)
 ```
 
 `newFamilyId` must be a well-formed UUID (checked before any query) that no family already uses,
-and cannot be combined with `familyId`; each violation throws `InvalidTokenFamilyException`. A
+and cannot be combined with `familyId`; each violation throws `InvalidTokenFamilyException`. Family
+ids are canonicalised to lowercase, so they match case-insensitively on every driver. A
 `ttl` below 1 or a negative `absoluteTtl` throws `InvalidTokenConfigurationException`.
 
 **Session `meta`** is stored as JSON and inherited across every rotation (new keys are merged

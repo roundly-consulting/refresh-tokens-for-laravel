@@ -68,12 +68,18 @@ final class IssueRefreshTokenAction
 
         $now = CarbonImmutable::now();
 
-        $source = $context->familyId !== null
-            ? $this->inheritanceSource($context->familyId, $owner)
+        // Family ids are uuids — case-insensitive values. Canonicalise them (lowercase,
+        // as Postgres' uuid column does on its own) so every driver stores, finds and
+        // de-duplicates them alike.
+        $familyId = $context->familyId !== null ? strtolower($context->familyId) : null;
+        $newFamilyId = $context->newFamilyId !== null ? strtolower($context->newFamilyId) : null;
+
+        $source = $familyId !== null
+            ? $this->inheritanceSource($familyId, $owner)
             : null;
 
-        if ($context->newFamilyId !== null) {
-            $this->assertFamilyIsNew($context->newFamilyId);
+        if ($newFamilyId !== null) {
+            $this->assertFamilyIsNew($newFamilyId);
         }
 
         $plain = $this->hasher->generate();
@@ -82,7 +88,7 @@ final class IssueRefreshTokenAction
         $token->owner_type = $owner->getMorphClass();
         $token->owner_id = $this->ownerId($owner);
         $token->token_hash = $this->hasher->hash($plain);
-        $token->family_id = $source->family_id ?? $context->newFamilyId ?? (string) Str::uuid();
+        $token->family_id = $source->family_id ?? $newFamilyId ?? (string) Str::uuid();
         $token->access_reference = $context->accessReference;
         $token->ip_address = $context->ipAddress ?? $source?->ip_address;
         $token->user_agent = $context->userAgent ?? $source?->user_agent;
