@@ -26,7 +26,7 @@ interface RefreshTokenManager
      */
     public function redeem(#[SensitiveParameter] string $plain, ?string $ownerType = null): ?RedemptionResult;
 
-    /** Redeem then issue a same-family replacement in one call. Null on a failed redeem. */
+    /** Redeem then issue a same-family replacement in one call. Null on a failed redeem or a family killed by reuse mid-rotation. */
     public function rotate(#[SensitiveParameter] string $plain, ?RotationContext $context = null): ?RotationResult;
 
     /** Revoke by plaintext (logout with the token in hand); idempotent. */

@@ -62,6 +62,19 @@ final class RevokeTokenFamilyAction
             }
         } while ($revokedThisPass > 0);
 
+        // Nothing live to revoke, yet a rotated token was re-presented: the family may be
+        // mid-rotation — its newest row claimed by a refresh whose replacement is not
+        // inserted yet. Record the verdict on the presented row itself, so that
+        // replacement's own dead-family check (before and after its insert) sees it and
+        // cannot carry the lineage past the reuse. Without this marker the outcome hinged
+        // on timing: a replay one millisecond later revoked the replacement instead.
+        if ($revoked === 0) {
+            TokenModel::query()
+                ->whereKey($token->getKey())
+                ->where('revoked_reason', RevocationReason::Rotated->value)
+                ->update(['revoked_reason' => RevocationReason::ReuseDetected->value]);
+        }
+
         // Only signal on a real transition: re-presenting an already-dead token
         // revokes nothing, so it must not spam host alerting with empty reuse events.
         if ($revoked > 0) {

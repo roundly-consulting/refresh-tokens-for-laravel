@@ -29,6 +29,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationResult;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Support\PendingIssue;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
@@ -76,14 +77,20 @@ final class RefreshTokens implements RefreshTokenManager, SessionManager
             return null;
         }
 
-        $replacement = $this->issue($result->user, new IssueContext(
-            ipAddress: $context?->ipAddress,
-            userAgent: $context?->userAgent,
-            accessReference: $context?->accessReference,
-            familyId: $result->familyId,
-            ttl: $context?->ttl,
-            meta: $context?->meta,
-        ));
+        try {
+            $replacement = $this->issue($result->user, new IssueContext(
+                ipAddress: $context?->ipAddress,
+                userAgent: $context?->userAgent,
+                accessReference: $context?->accessReference,
+                familyId: $result->familyId,
+                ttl: $context?->ttl,
+                meta: $context?->meta,
+            ));
+        } catch (InvalidTokenFamilyException) {
+            // Reuse detection killed the family between the redeem and the issue: the
+            // redeemed token is spent and there is no live lineage to extend.
+            return null;
+        }
 
         // The replacement was born into a family that reuse detection killed around
         // the insert: it is already revoked, so there is no live session to hand back.

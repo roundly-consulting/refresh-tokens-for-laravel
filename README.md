@@ -309,8 +309,13 @@ Presenting an already-rotated token is a theft signal. The **entire token family
 the host callback is invoked for every live member's access token, and a
 `RefreshTokenReuseDetected` event fires — all automatically, no config switch. The family revoke
 re-scans until a pass revokes nothing, and a replacement issued into a family around the moment it
-is killed self-revokes, so a freshly rotated token can never survive the theft response (either
-race ordering). Tune `rotation.grace` if your frontend legitimately re-presents a token within a
+is killed self-revokes, so a freshly rotated token can never survive the theft response (any race
+ordering). When the replay lands while the family is **mid-rotation** — its newest row already
+claimed by a refresh whose replacement is not inserted yet, so nothing is live to revoke — the
+replayed row itself is marked `ReuseDetected`, and that in-flight replacement is refused (`rotate()`
+returns `null`; an explicit `issue(familyId: …)` throws `InvalidTokenFamilyException`). With the
+default strict `rotation.grace = 0` this includes the loser of two concurrent redemptions of the
+same token. Tune `rotation.grace` if your frontend legitimately re-presents a token within a
 short single-flight window.
 
 The `RefreshTokenReuseDetected` event fires **only when the sweep actually revokes something**

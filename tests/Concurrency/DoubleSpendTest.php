@@ -20,10 +20,11 @@ use RoundlyConsulting\Testing\Database\DriverMatrix;
 it('loses the atomic claim when the row is revoked between read and claim', function (): void {
     $user = User::factory()->create();
     $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $claimedAt = now()->subSecond()->startOfSecond();
 
     $raced = false;
 
-    DB::listen(function (QueryExecuted $query) use (&$raced, $new): void {
+    DB::listen(function (QueryExecuted $query) use (&$raced, $new, $claimedAt): void {
         if ($raced || ! str_contains($query->sql, 'token_hash')) {
             return;
         }
@@ -32,17 +33,21 @@ it('loses the atomic claim when the row is revoked between read and claim', func
 
         // A concurrent winner claims the row first.
         RefreshTokenModel::query()->whereKey($new->token->getKey())->update([
-            'revoked_at' => now(),
+            'revoked_at' => $claimedAt,
             'revoked_reason' => RevocationReason::Rotated->value,
         ]);
     });
 
     $result = RefreshToken::redeem($new->plainText);
+    $row = $new->token->fresh();
 
     expect($result)->toBeNull()
         ->and($raced)->toBeTrue()
-        // The row was revoked exactly once — no double-spend, reason stays as the winner set it.
-        ->and($new->token->fresh()->revoked_reason)->toBe(RevocationReason::Rotated);
+        // The row was claimed exactly once — no double-spend: the winner's claim stands…
+        ->and($row->revoked_at->equalTo($claimedAt))->toBeTrue()
+        // …and, rotation being strict (grace 0), the loser's presentation is reuse: its
+        // verdict marks the family so the winner's replacement cannot extend it.
+        ->and($row->revoked_reason)->toBe(RevocationReason::ReuseDetected);
 });
 
 it('treats a claim lost within the grace window as a benign retry', function (): void {
@@ -126,6 +131,7 @@ it('serialises exactly one winner across many redemptions of the same token', fu
 it('lets only one connection win the conditional claim on postgres', function (): void {
     $user = User::factory()->create();
     $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $claimedAt = now()->subSecond()->startOfSecond();
 
     // A second, independent session against the same database — a real concurrent
     // connection, not another handle on the transaction under test.
@@ -137,7 +143,7 @@ it('lets only one connection win the conditional claim on postgres', function ()
     $claimed = DB::connection('rival')->table('refresh_tokens')
         ->where('id', $new->token->getKey())
         ->whereNull('revoked_at')
-        ->update(['revoked_at' => now(), 'revoked_reason' => RevocationReason::Rotated->value]);
+        ->update(['revoked_at' => $claimedAt, 'revoked_reason' => RevocationReason::Rotated->value]);
 
     expect($claimed)->toBe(1);
 
@@ -147,7 +153,11 @@ it('lets only one connection win the conditional claim on postgres', function ()
     // sessions from one refresh token.
     expect(RefreshToken::redeem($new->plainText))->toBeNull();
 
-    // Revoked exactly once, by the winner, with the winner's reason intact.
+    // Claimed exactly once, by the winner (its timestamp stands); the strict loser's
+    // presentation is reuse, so the row now carries the family's reuse verdict.
+    $row = $new->token->fresh();
+
     expect(RefreshTokenModel::query()->whereKey($new->token->getKey())->count())->toBe(1)
-        ->and($new->token->fresh()->revoked_reason)->toBe(RevocationReason::Rotated);
+        ->and($row->revoked_at->equalTo($claimedAt))->toBeTrue()
+        ->and($row->revoked_reason)->toBe(RevocationReason::ReuseDetected);
 })->skip(fn (): bool => DriverMatrix::driver() !== 'pgsql', 'true concurrency is only observable on a real engine');
