@@ -65,7 +65,7 @@ class RefreshTokenFactory extends Factory
     {
         return $this->state(fn (): array => [
             'owner_type' => $owner->getMorphClass(),
-            'owner_id' => $owner->getAuthIdentifier(),
+            'owner_id' => $owner->getKey(),
         ]);
     }
 }

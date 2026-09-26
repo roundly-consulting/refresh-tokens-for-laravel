@@ -100,8 +100,9 @@ class RefreshToken extends Model
     }
 
     /**
-     * Rows belonging to exactly this owner: its morph class AND its id. Scoping by id
-     * alone would collide across owner tables (user #7 and client #7).
+     * Rows belonging to exactly this owner: its morph class AND its key. Scoping by id
+     * alone would collide across owner tables (user #7 and client #7). The key — not the
+     * auth identifier — because `owner_id` is a morph key, resolved like any Eloquent morph.
      *
      * @param  Builder<RefreshToken>  $query
      * @return Builder<RefreshToken>
@@ -110,7 +111,7 @@ class RefreshToken extends Model
     {
         return $query
             ->where('owner_type', $owner->getMorphClass())
-            ->where('owner_id', $owner->getAuthIdentifier());
+            ->where('owner_id', $owner->getKey());
     }
 
     /**

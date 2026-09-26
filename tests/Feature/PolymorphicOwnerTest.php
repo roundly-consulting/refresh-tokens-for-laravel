@@ -8,6 +8,7 @@ use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\Client;
+use RoundlyConsulting\RefreshTokens\Tests\Fixtures\PublicIdUser;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 /**
@@ -79,4 +80,27 @@ it('redeems back to the right owner model', function (): void {
 
     expect($result?->user)->toBeInstanceOf(Client::class)
         ->and($result?->user->is($this->client))->toBeTrue();
+});
+
+/*
+ * `owner_id` is a morph key: `owner()` (MorphTo) and `refreshTokens()` (MorphMany)
+ * resolve it through the model's KEY. Storing the auth identifier instead breaks the
+ * round trip for a model whose identifier is another column — here user #1's public id
+ * is "2", so its token came back owned by user #2.
+ */
+it('keys the owner by the model key even when the auth identifier is another column', function (): void {
+    $first = PublicIdUser::query()->create(['name' => '2']);
+    $second = PublicIdUser::query()->create(['name' => '1']);
+
+    $issued = RefreshToken::issue($first, new IssueContext);
+
+    expect($issued->token->owner_id)->toBe($first->getKey())
+        ->and($first->refreshTokens()->count())->toBe(1)
+        ->and($second->refreshTokens()->count())->toBe(0)
+        ->and(RefreshToken::listFor($first))->toHaveCount(1)
+        ->and(RefreshToken::listFor($second))->toHaveCount(0);
+
+    $redeemed = RefreshToken::redeem($issued->plainText);
+
+    expect($redeemed?->user->is($first))->toBeTrue();
 });

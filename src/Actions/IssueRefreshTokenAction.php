@@ -306,9 +306,13 @@ final class IssueRefreshTokenAction
         return $merged === [] ? null : $merged;
     }
 
+    /**
+     * The owner's model key — not its auth identifier: `owner_id` is a morph key, and
+     * `owner()` / `refreshTokens()` resolve it through the key like any Eloquent morph.
+     */
     private function ownerId(Authenticatable&Model $owner): int|string
     {
-        $id = $owner->getAuthIdentifier();
+        $id = $owner->getKey();
 
         return is_int($id) ? $id : (string) $id;
     }
