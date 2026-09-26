@@ -39,3 +39,10 @@ All notable changes to `refresh-tokens-for-laravel` will be documented in this f
   every revoke verb accepts a reason.
 - Events carry the family and owner (`ownerType`, `ownerId`) instead of `userId`;
   `RefreshTokenIssued` gains family/owner; `SessionRevoked` gains family, owner and reason.
+- Family-level revokes (`revokeAllFor`/`revokeAll`, `revokeOthers`, `revokeAllExcept`,
+  `revokeSession`) seal a session caught mid-rotation, so a concurrent refresh can no longer carry
+  it past the logout; inheriting a family whose newest row was ended by a revoke now throws
+  `InvalidTokenFamilyException::ended`.
+- A replay that lands while its family is mid-rotation now marks the family reused, so the in-flight
+  replacement is refused; `rotate()` returns `null` (instead of throwing) when the family dies
+  between its redeem and its issue.

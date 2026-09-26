@@ -14,12 +14,14 @@ use SensitiveParameter;
 
 /**
  * Revoke every active session for an owner except the one holding the current access
- * reference. Passing a null current reference revokes them all. Returns the count.
+ * reference. Passing a null current reference revokes them all. Sessions caught
+ * mid-rotation are sealed first ({@see SealPendingRotationsAction}). Returns the count.
  */
 final class RevokeOtherSessionsAction
 {
     public function __construct(
         private readonly RevokeSessionAction $revokeSession,
+        private readonly SealPendingRotationsAction $seal,
     ) {}
 
     public function execute(
@@ -27,6 +29,12 @@ final class RevokeOtherSessionsAction
         #[SensitiveParameter] ?string $currentAccessReference,
         RevocationReason $reason = RevocationReason::LogoutAll,
     ): int {
+        $sealed = $this->seal->execute(
+            TokenModel::query()->ownedBy($owner),
+            $reason,
+            fn (RefreshToken $row): bool => $currentAccessReference !== null && $row->access_reference === $currentAccessReference,
+        );
+
         /** @var Collection<int, RefreshToken> $sessions */
         $sessions = TokenModel::query()
             ->ownedBy($owner)
@@ -45,6 +53,6 @@ final class RevokeOtherSessionsAction
             }
         }
 
-        return $revoked;
+        return $sealed + $revoked;
     }
 }

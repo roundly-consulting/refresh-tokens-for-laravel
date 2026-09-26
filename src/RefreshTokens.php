@@ -87,14 +87,14 @@ final class RefreshTokens implements RefreshTokenManager, SessionManager
                 meta: $context?->meta,
             ));
         } catch (InvalidTokenFamilyException) {
-            // Reuse detection killed the family between the redeem and the issue: the
-            // redeemed token is spent and there is no live lineage to extend.
+            // Reuse detection or a revoke ended the family between the redeem and the
+            // issue: the redeemed token is spent and there is no live lineage to extend.
             return null;
         }
 
-        // The replacement was born into a family that reuse detection killed around
-        // the insert: it is already revoked, so there is no live session to hand back.
-        if ($replacement->token->revoked_reason === RevocationReason::ReuseDetected) {
+        // The replacement was born into a family that reuse detection or a revoke ended
+        // around the insert: it is already revoked, so there is no live session to hand back.
+        if ($replacement->token->revoked_at !== null) {
             return null;
         }
 

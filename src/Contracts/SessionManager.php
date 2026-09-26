@@ -30,10 +30,10 @@ interface SessionManager
     /** The active row of one of the owner's families; null when malformed, unknown, dead or foreign. */
     public function findSession(Authenticatable&Model $owner, string $familyId): ?RefreshToken;
 
-    /** Revoke every active row of one of the owner's families; false when nothing was revoked. */
+    /** Revoke every active row of one of the owner's families (sealing it if caught mid-rotation); false when nothing was revoked. */
     public function revokeSession(Authenticatable&Model $owner, string $familyId, RevocationReason $reason = RevocationReason::Logout): bool;
 
-    /** Revoke every active session except the given family (null = all); returns the count revoked. */
+    /** Revoke every active (or mid-rotation) session except the given family (null = all); returns the count ended. */
     public function revokeAllExcept(Authenticatable&Model $owner, ?string $keepFamilyId, RevocationReason $reason = RevocationReason::LogoutAll): int;
 
     /** Revoke one session row; idempotent, denies its access reference once. */

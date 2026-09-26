@@ -298,8 +298,8 @@ call returns `null` (or throws). The client then simply holds no valid refresh t
 in again. This is an availability-only edge (forced re-login); no token is ever forged.
 
 Passing an explicit `familyId` (via `IssueContext` or `->inFamily()`) is validated: the family
-must already exist for **that same owner** and must not have been killed by reuse detection, or an
-`InvalidTokenFamilyException` is thrown. This prevents grafting a token into another user's — or a
+must already exist for **that same owner**, must not have been killed by reuse detection, and its
+newest row must not have been ended by a revoke, or an `InvalidTokenFamilyException` is thrown. This prevents grafting a token into another user's — or a
 dead — lineage. Normal `rotate()` inherits the redeemed token's own family, so you rarely set this
 by hand.
 
@@ -336,6 +336,14 @@ RefreshToken::revokeAllFor($user, RevocationReason::CredentialsChanged);
 Every revoke verb takes an optional `RevocationReason`, persisted in `revoked_reason` and carried
 on `SessionRevoked`: `Rotated`, `Logout`, `LogoutAll`, `ReuseDetected`, `Expired`, `Manual`,
 `CredentialsChanged`, `AccountDisabled`, `SessionLimit`, `Security`.
+
+A session revoked **mid-rotation** — its token already redeemed, the replacement not yet issued —
+has no active row for that instant. The family-level verbs (`revokeAllFor`, `revokeAll`,
+`revokeOthers`, `revokeAllExcept`, `revokeSession`) seal such a session too (relabel its redeemed
+row with the reason, deny its access reference, fire `SessionRevoked`), so the in-flight replacement
+is refused — `rotate()` returns `null`, an explicit `issue(familyId: …)` throws
+`InvalidTokenFamilyException` or comes back already revoked. "Log out everywhere" cannot be outrun by
+a refresh.
 
 ### Sessions
 

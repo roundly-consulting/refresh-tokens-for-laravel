@@ -28,11 +28,13 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * still active: on a refresh the row `redeem()` just claimed is already revoked
  * when the replacement is issued, and it is exactly the row to inherit from.
  *
- * When inheriting a family the action guards the theft response: the family must
- * exist for the owner and be alive before the insert, and — because reuse can fire
- * in the window around the insert — the just-inserted row is re-checked and
- * self-revoked if the family has since been killed, so a rotation replacement can
- * never outlive its family.
+ * When inheriting a family the action guards the theft response and every logout:
+ * the family must exist for the owner and be alive before the insert — not killed by
+ * reuse detection, and its newest row not ended by a revoke (a revoke seals a family
+ * caught mid-rotation by relabelling that row, see {@see SealPendingRotationsAction})
+ * — and, because either can land in the window around the insert, the just-inserted
+ * row is re-checked and self-revoked if the family has since been killed or sealed,
+ * so a rotation replacement can never outlive its family.
  */
 final class IssueRefreshTokenAction
 {
@@ -105,13 +107,15 @@ final class IssueRefreshTokenAction
         $token->expires_at = $this->expiresAt($now, $context->ttl ?? $this->configuredTtl(), $token->absolute_expires_at);
         $token->save();
 
-        // Reuse detection may have killed the family between the liveness check and
-        // this insert (either ordering of insert-vs-family-revoke). If so, this
-        // replacement must not survive the theft response — revoke it immediately.
-        if ($source !== null && $this->familyHasReuse($token->family_id)) {
-            $this->selfRevoke($token, $now);
+        // Reuse detection or a revoke may have ended the family between the liveness
+        // check and this insert (either ordering of insert-vs-revoke). If so, this
+        // replacement must not survive it — revoke it immediately.
+        if ($source !== null) {
+            $this->recheckFamily($token, $source, $now);
 
-            return new NewRefreshToken($plain, $token);
+            if ($token->revoked_at !== null) {
+                return new NewRefreshToken($plain, $token);
+            }
         }
 
         Event::dispatch(new RefreshTokenIssued(
@@ -185,7 +189,54 @@ final class IssueRefreshTokenAction
             throw InvalidTokenFamilyException::reuseRevoked($familyId);
         }
 
+        if ($this->endedBy($source) !== null) {
+            throw InvalidTokenFamilyException::ended($familyId);
+        }
+
         return $source;
+    }
+
+    /**
+     * The reason a family's newest row says the session is over, or null while it
+     * may still be extended: an active row, or one merely consumed by a rotation.
+     */
+    private function endedBy(RefreshToken $source): ?RevocationReason
+    {
+        $reason = $source->revoked_reason;
+
+        return $source->revoked_at !== null && $reason !== null && $reason !== RevocationReason::Rotated
+            ? $reason
+            : null;
+    }
+
+    /**
+     * Post-insert: self-revoke the replacement when the family was killed by reuse or
+     * its source row was sealed by a revoke around the insert, and reflect a revoke
+     * that swept the replacement itself in that window.
+     */
+    private function recheckFamily(RefreshToken $token, RefreshToken $source, CarbonImmutable $now): void
+    {
+        if ($this->familyHasReuse($token->family_id)) {
+            $this->selfRevoke($token, $now, RevocationReason::ReuseDetected);
+
+            return;
+        }
+
+        $current = TokenModel::query()->whereKey($source->getKey())->first();
+        $ended = $current !== null ? $this->endedBy($current) : null;
+
+        if ($ended !== null) {
+            $this->selfRevoke($token, $now, $ended);
+
+            return;
+        }
+
+        $stored = TokenModel::query()->whereKey($token->getKey())->first();
+
+        if ($stored !== null && $stored->revoked_at !== null) {
+            $token->revoked_at = $stored->revoked_at;
+            $token->revoked_reason = $stored->revoked_reason;
+        }
     }
 
     /**
@@ -214,18 +265,18 @@ final class IssueRefreshTokenAction
             ->exists();
     }
 
-    private function selfRevoke(RefreshToken $token, CarbonImmutable $now): void
+    private function selfRevoke(RefreshToken $token, CarbonImmutable $now, RevocationReason $reason): void
     {
         TokenModel::query()
             ->whereKey($token->getKey())
             ->whereNull('revoked_at')
             ->update([
                 'revoked_at' => $now,
-                'revoked_reason' => RevocationReason::ReuseDetected->value,
+                'revoked_reason' => $reason->value,
             ]);
 
         $token->revoked_at = $now;
-        $token->revoked_reason = RevocationReason::ReuseDetected;
+        $token->revoked_reason = $reason;
     }
 
     /**
