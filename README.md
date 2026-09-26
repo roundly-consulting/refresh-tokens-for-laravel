@@ -8,7 +8,9 @@
 
 Opaque, rotating **refresh tokens** and **device sessions** for Laravel — SHA-256 at rest,
 atomic single-query anti-double-spend rotation, always-on family revocation on reuse
-detection, and first-class session management. **Zero third-party runtime dependencies.**
+detection, and first-class session management. Tokens hang off a **polymorphic owner**, so users,
+API clients, admins — any `Authenticatable` model — share one table without their ids colliding.
+**Zero third-party runtime dependencies.**
 
 This package owns the full lifecycle of refresh tokens and sessions. It deliberately stays
 out of concerns the host already owns: JWT minting/verification and jti denylisting, user-agent
@@ -31,7 +33,7 @@ small contract and DTO inputs.
 - **[enums-for-laravel](https://github.com/roundly-consulting/enums-for-laravel)** — labels and
   select options on `RevocationReason` and `DeviceType`.
 - **[package-toolkit-for-laravel](https://github.com/roundly-consulting/package-toolkit-for-laravel)**
-  — the service provider, the `key_type` → column mapping (`KeyType` + the `ownerKey()` schema macro),
+  — the service provider, the `key_type` → column mapping (`KeyType` + the `morphKey()` schema macro),
   the model resolver behind `refresh-tokens.model`, and the `php artisan about` section. Installed
   automatically; nothing to configure.
 
@@ -42,8 +44,8 @@ composer require roundly-consulting/refresh-tokens-for-laravel
 ```
 
 **Migrations are publish-only** — the package does not load them, so publish first, then migrate.
-If your users are UUID/ULID-keyed, publish the config and set `key_type` **before** you migrate (the
-owner column is baked into the schema):
+If your owner models are UUID/ULID-keyed, publish the config and set `key_type` **before** you
+migrate (the `owner_id` column is baked into the schema):
 
 ```bash
 php artisan vendor:publish --tag="refresh-tokens-migrations"
@@ -56,7 +58,7 @@ Optionally publish the config file:
 php artisan vendor:publish --tag="refresh-tokens-config"
 ```
 
-Add the trait to your user model to expose its tokens and sessions:
+Add the trait to every model that holds sessions — any `Authenticatable` Eloquent model:
 
 ```php
 use RoundlyConsulting\RefreshTokens\Traits\HasRefreshTokens;
@@ -65,7 +67,20 @@ final class User extends Authenticatable
 {
     use HasRefreshTokens;
 }
+
+final class Client extends Authenticatable   // a second, isolated account type
+{
+    use HasRefreshTokens;
+}
 ```
+
+### Adopting an existing tokens table
+
+A host that already has a tokens table can reproduce the package shape from its own migration:
+`RefreshTokenBlueprint::columns($table, $keyType)` emits the full table, and
+`RefreshTokenBlueprint::addSessionColumns($table)` adds only the session columns
+(`family_started_at`, `absolute_expires_at`, `meta` — all nullable, so they fit a populated table).
+Backfill `owner_type` / `family_started_at` / `absolute_expires_at` in the same migration.
 
 ## Configuration
 
@@ -75,11 +90,9 @@ The published `config/refresh-tokens.php`:
 |---|---|---|---|---|
 | `table` | string | `refresh_tokens` | `REFRESH_TOKENS_TABLE` | Table name. |
 | `model` | class-string | `RefreshToken::class` | — | Model class; swap for a host subclass. |
-| `user_model` | class-string | `App\Models\User` | `REFRESH_TOKENS_USER_MODEL` | Owner model for the relation. |
-| `foreign_key` | string | `user_id` | `REFRESH_TOKENS_FOREIGN_KEY` | Owner foreign key. |
-| `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Owner primary-key type driving the FK column: `bigint` (alias: `id`), `uuid`, or `ulid`. An unrecognized value falls back to `bigint`. |
-| `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Sliding token lifetime per issue/rotation. |
-| `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Absolute cap on a rotation chain measured from the family root. `0` disables. |
+| `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Primary-key type shared by every owner model, driving the `owner_id` column: `bigint` (alias: `id`), `uuid`, or `ulid`. An unrecognized value falls back to `bigint`. |
+| `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Default sliding token lifetime per issue/rotation (per-issue override: `IssueContext::$ttl`). |
+| `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Default absolute cap on a session, stored when the family is rooted (per-issue override: `IssueContext::$absoluteTtl`). `0` disables. |
 | `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length in base64url chars (~384 bits at 64). Minimum `32`, maximum `4096` — outside it throws. |
 | `hash.algo` | string | `sha256` | `REFRESH_TOKENS_HASH_ALGO` | At-rest hash algorithm; allowlisted to `sha256`, `sha384`, `sha512`. |
 | `hash.key` | ?string | `null` | `REFRESH_TOKENS_HASH_KEY` | Optional HMAC pepper; null = plain hash. |
@@ -109,11 +122,16 @@ degrade the token store:
 - **`token_length`** enforces a floor of **32** characters; a shorter value throws
   `InvalidTokenConfigurationException` instead of minting a brute-forceable token.
 
-### Owner key type (UUID / ULID user models)
+### Owners (polymorphic) and their key type
 
-The foreign-key column matches your user model's primary key. Set `key_type` **before the first
-migration** to `uuid` or `ulid` for non-integer user keys; the default `bigint` creates the usual
-auto-incrementing column. `id` is accepted as an alias for `bigint`.
+Every token row carries `owner_type` (the owner's morph class — respects your
+`Relation::morphMap()`) and `owner_id`, with a composite index. Owner-scoped queries always match
+**both**, so user #7 and client #7 never see each other's sessions.
+
+The `owner_id` column matches your owner models' primary key. Set `key_type` **before the first
+migration** to `uuid` or `ulid` for non-integer keys; the default `bigint` creates the usual
+integer column. `id` is accepted as an alias for `bigint`. All owner models must share that key
+type — a bigint `User` and a uuid `Client` cannot share one table.
 
 Unlike the two keys above, an **unrecognized `key_type` does not throw** — it falls back to
 `bigint`. Schema shape is not a security boundary, and a one-line env typo must never leave a host
@@ -126,9 +144,11 @@ REFRESH_TOKENS_KEY_TYPE=ulid
 ### Absolute session lifetime
 
 Every rotation issues the replacement with a fresh sliding `ttl`, so a continuously refreshed
-session could otherwise live forever. `absolute_ttl` caps the whole rotation chain: the
-replacement's expiry is `min(now + ttl, family_root.created_at + absolute_ttl)`. Set it to `0` to
-disable the cap and fall back to pure sliding expiry.
+session could otherwise live forever. `absolute_ttl` caps the whole rotation chain: when a family is
+rooted, its hard end is stored on the row (`absolute_expires_at`, alongside `family_started_at`) and
+inherited verbatim by every rotation, so each replacement's expiry is
+`min(now + ttl, absolute_expires_at)`. The cap survives pruning of old rows and later config
+changes. Set it to `0` (or pass `absoluteTtl: 0` for one session) to disable the cap.
 
 ### Serialization safety
 
@@ -198,6 +218,28 @@ $new = RefreshToken::for($user)
     ->issue();
 ```
 
+Per-session options (all optional):
+
+```php
+$sid = (string) Str::uuid();       // e.g. already minted into the access token as `sid`
+
+$new = RefreshToken::for($client)
+    ->fromRequest($request)
+    ->startingFamily($sid)         // root the family under YOUR uuid (IssueContext::$newFamilyId)
+    ->ttl(3600)                    // sliding lifetime for this session
+    ->absoluteTtl(86_400)          // hard cap for this session; 0 = uncapped
+    ->meta(['guard' => 'clients', 'amr' => ['pwd', 'otp'], 'auth_time' => time()])
+    ->issue();
+```
+
+`newFamilyId` must be a well-formed UUID (checked before any query) that no family already uses,
+and cannot be combined with `familyId`; each violation throws `InvalidTokenFamilyException`. A
+`ttl` below 1 or a negative `absoluteTtl` throws `InvalidTokenConfigurationException`.
+
+**Session `meta`** is stored as JSON and inherited across every rotation (new keys are merged
+over the old). It is readable by anyone who can read the table and is serialized with the
+model — **never put secrets in it**. On Postgres (`jsonb`) object key order is not preserved.
+
 ### Rotate
 
 `redeem()` atomically claims and rotates a token. Of N concurrent redemptions of the same
@@ -210,17 +252,42 @@ if ($result === null) {
     throw ValidationException::withMessages([...]);
 }
 
-$user = $result->user;
+$owner = $result->user;           // the owner model (User, Client, …)
 $familyId = $result->familyId;
 ```
 
-`rotate()` does redeem + issue a same-family replacement in one call (mint the new access token
-first, pass its reference):
+**Guard-scoped redemption.** Pass the owner morph class your endpoint serves. A token of another
+owner type is treated as unknown — `null`, **not consumed**, no reuse signal — so presenting a
+user's token at the clients endpoint can neither burn the user's session nor trip reuse detection:
 
 ```php
-$rotation = RefreshToken::rotate($plainFromClient, linkedTo: $newAccess->jti);
+$result = RefreshToken::redeem($plainFromClient, ownerType: (new Client)->getMorphClass());
+```
+
+`rotate()` does redeem + issue a same-family replacement in one call (mint the new access token
+first, pass its reference in a `RotationContext`):
+
+```php
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
+
+$rotation = RefreshToken::rotate($plainFromClient, new RotationContext(
+    ownerType: (new User)->getMorphClass(),  // optional guard scope
+    ipAddress: $request->ip(),              // current ip/ua replace the inherited ones
+    userAgent: $request->userAgent(),
+    accessReference: $newAccess->jti,
+    ttl: 3600,                              // optional sliding-lifetime override
+    meta: ['auth_time' => $authTime],       // merged over the inherited meta
+));
 // ?RotationResult { user, newRefreshToken (NewRefreshToken), redeemedFamilyId }
 ```
+
+**What a replacement inherits.** Issuing into an existing family — via `rotate()` or an explicit
+`issue(…, new IssueContext(familyId: …))` — copies the session from the family's **newest** row
+(revoked or not): `family_started_at`, `absolute_expires_at`, `meta` (merged), and the device/geo
+columns (`browser`, `browser_version`, `os`, `os_version`, `device_type`, `is_bot`, `country`,
+`city`, `country_code`). `ip_address`/`user_agent` come from the context when given, else they are
+copied too. This makes `redeem()` → mint an access token → `issue(familyId: …)` (when the
+replacement must reference a jti minted *after* the redeem) behave exactly like `rotate()`.
 
 **Failure semantics — treat `null` (or an exception) as "re-authenticate".** `rotate()` is
 redeem-then-issue: the old token is consumed **before** the replacement exists, and the operation
@@ -254,24 +321,41 @@ presentation; wrap your refresh endpoint in Laravel's throttle middleware to blu
 ### Revoke / logout
 
 ```php
+use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
+
 RefreshToken::revoke($plainFromClient);  // logout with token in hand (idempotent)
 RefreshToken::revokeAllFor($user);       // global logout — returns count revoked
+RefreshToken::revokeAllFor($user, RevocationReason::CredentialsChanged);
 ```
+
+Every revoke verb takes an optional `RevocationReason`, persisted in `revoked_reason` and carried
+on `SessionRevoked`: `Rotated`, `Logout`, `LogoutAll`, `ReuseDetected`, `Expired`, `Manual`,
+`CredentialsChanged`, `AccountDisabled`, `SessionLimit`, `Security`.
 
 ### Sessions
 
-A session is an active refresh-token row. The `current` flag is derived by the host by
-comparing the request's access reference to each row's `access_reference`.
+A session is a token **family**; its active row carries the device data. Row ids change on every
+rotation, so address a session by its **family id** — the stable session id (and a natural `sid`
+claim for your access token). `$row->sessionStartedAt()` returns when the family began.
 
 ```php
-$sessions = RefreshToken::listFor($user);                 // active, newest first
-RefreshToken::revokeOthers($user, $currentAccess->jti);   // keep current, revoke the rest
-RefreshToken::revokeAll($user);                           // revoke every session
+$sessions = RefreshToken::listFor($user);                  // active rows, newest first
+$session  = RefreshToken::findSession($user, $familyId);   // ?RefreshToken — active row of that family
+RefreshToken::revokeSession($user, $familyId);             // bool — revokes every active row of it
+RefreshToken::revokeAllExcept($user, $currentFamilyId);    // "log out my other devices"; int
+RefreshToken::revokeOthers($user, $currentAccess->jti);    // same, keyed by access reference
+RefreshToken::revokeAll($user);                            // revoke every session
 
-// On the user model via the trait:
-$user->refreshTokens();  // HasMany, all tokens
-$user->sessions();       // HasMany, active tokens only
+// On the owner model via the trait:
+$user->refreshTokens();  // MorphMany, all tokens
+$user->sessions();       // MorphMany, active tokens only
 ```
+
+`findSession`/`revokeSession` are owner-scoped (another owner's family ⇒ `null`/`false`) and
+validate the id as a UUID before any query (malformed ⇒ `null`/`false`, never a database error).
+`revokeSession` revokes **every** active row of the family — a grace-window rotation can briefly
+leave two — denying each access reference once. `revokeAllExcept` with `null` or an unrecognisable
+id revokes everything (fail closed).
 
 The trait also adds `$user->…()` verbs that read as the user acting on itself:
 
@@ -279,6 +363,8 @@ The trait also adds `$user->…()` verbs that read as the user acting on itself:
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 
 $new = $user->issueRefreshToken(new IssueContext(accessReference: $access->jti));
+$user->findSession($familyId);              // ?RefreshToken
+$user->revokeSession($familyId);            // bool
 $user->revokeAllSessions();                 // = RefreshToken::revokeAllFor($user); returns count
 $user->revokeOtherSessions($currentAccess->jti); // keep current, revoke the rest; returns count
 ```
@@ -292,12 +378,12 @@ ships the verb but never hooks your User model for you:
 ```php
 // In a change-password action:
 $user->update(['password' => Hash::make($newPassword)]);
-$user->revokeAllSessions();
+$user->revokeAllSessions(RevocationReason::CredentialsChanged);
 
 // …or via a saved observer:
 User::saved(function (User $user): void {
     if ($user->wasChanged('password')) {
-        $user->revokeAllSessions();
+        $user->revokeAllSessions(RevocationReason::CredentialsChanged);
     }
 });
 ```
@@ -346,14 +432,17 @@ previously stored geo.
 
 ### Events
 
-Hook these on the host side; they carry ids/scalars only (never the model or plaintext):
+Hook these on the host side; they carry ids/scalars only (never the model or plaintext).
+`ownerType` is the owner's morph class, so listeners can tell account types apart:
 
-- `RefreshTokenIssued(int|string $tokenId)` — trigger async device/geo enrichment.
-- `RefreshTokenRedeemed(int|string $tokenId, string $familyId, int|string $userId)` — a token was
-  legitimately spent (rotated); hook it to audit rotations or meter session churn.
-- `SessionRevoked(int|string $tokenId, ?string $accessReference)`.
-- `RefreshTokenReuseDetected(string $familyId, int|string $userId, int $revokedCount)` — theft
-  signal for alerting; `revokedCount` reports how many live family members were revoked in
+- `RefreshTokenIssued(int|string $tokenId, string $familyId, string $ownerType, int|string $ownerId)`
+  — trigger async device/geo enrichment.
+- `RefreshTokenRedeemed(int|string $tokenId, string $familyId, string $ownerType, int|string $ownerId)`
+  — a token was legitimately spent (rotated); hook it to audit rotations or meter session churn.
+- `SessionRevoked(int|string $tokenId, string $familyId, string $ownerType, int|string $ownerId,
+  RevocationReason $reason, ?string $accessReference)`.
+- `RefreshTokenReuseDetected(string $familyId, string $ownerType, int|string $ownerId, int $revokedCount)`
+  — theft signal for alerting; `revokedCount` reports how many live family members were revoked in
   response.
 
 `rotate()` fires one `RefreshTokenRedeemed` (for the spent token) **and** one `RefreshTokenIssued`
@@ -387,8 +476,11 @@ retention window comfortably longer than your access-token TTL so the theft sign
   transaction, no row lock; works identically on PostgreSQL and SQLite.
 - **Always-on family revocation** on reuse detection, race-hardened so no rotated replacement
   survives the theft response and the signal never spams on replayed dead tokens.
-- **Absolute session lifetime** (`absolute_ttl`) caps a rotation chain so a stolen-but-active
-  session can't be refreshed forever.
+- **Absolute session lifetime** (`absolute_ttl`, stored per family) caps a rotation chain so a
+  stolen-but-active session can't be refreshed forever.
+- **Guard-scoped redemption** (`redeem($plain, ownerType: …)`): a token presented at another
+  account type's endpoint is invisible — never consumed, never counted as reuse.
+- **Session `meta` is not a secret store** — it is plain JSON, serialized with the model.
 - `#[SensitiveParameter]` on every plaintext parameter; plaintext and hashes are never logged.
 
 Intentionally host-owned (not this package): JWT minting/verification, jti denylisting,

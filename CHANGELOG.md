@@ -18,3 +18,24 @@ All notable changes to `refresh-tokens-for-laravel` will be documented in this f
   `assertRevoked` / `assertNotRevoked` / `assertNothingRevoked` / `assertRevokedCount` helpers.
 - `enrich()` now accepts the `RefreshToken` model as well as an id, with documented write
   semantics (device columns always overwritten; location written only when supplied).
+- **Polymorphic owners**: tokens hang off `owner_type` + `owner_id` (toolkit `morphKey`, composite
+  index), so any `Authenticatable` model holds sessions in one table. The `user_model` and
+  `foreign_key` config keys are removed; `key_type` is now the key type shared by every owner model.
+  Owner parameters are typed `Authenticatable&Model`; `HasRefreshTokens` relations are `MorphMany`;
+  the factory's `forUser()` is now `forOwner()`; new `ownedBy()` scope.
+- **Guard-scoped redemption**: `redeem($plain, ?string $ownerType)` — a token of another owner type
+  is unknown and is not consumed (no claim, no family revoke, no event).
+- `rotate($plain, ?RotationContext $context)` replaces the `linkedTo` string: owner-type scope,
+  current ip/ua, access reference, ttl and meta for the replacement.
+- `IssueContext` gains `newFamilyId` (root a family under a caller-chosen UUID), `ttl`,
+  `absoluteTtl` and `meta`; `PendingIssue` gains `startingFamily()`, `ttl()`, `absoluteTtl()`, `meta()`.
+- New `family_started_at`, `absolute_expires_at` and `meta` (jsonb) columns; the absolute cap is
+  stored at the root and inherited, instead of re-queried from the root row. Inheriting a family
+  (rotation or explicit `familyId`) copies meta (merged), family timestamps and device/geo columns
+  from the family's newest row. `RefreshTokenBlueprint::addSessionColumns()` for host adoption.
+- Family-addressed sessions: `findSession()`, `revokeSession()`, `revokeAllExcept()` on the facade,
+  `SessionManager` and (the first two) the trait; `RefreshToken::sessionStartedAt()`.
+- `RevocationReason` gains `CredentialsChanged`, `AccountDisabled`, `SessionLimit`, `Security`;
+  every revoke verb accepts a reason.
+- Events carry the family and owner (`ownerType`, `ownerId`) instead of `userId`;
+  `RefreshTokenIssued` gains family/owner; `SessionRevoked` gains family, owner and reason.
