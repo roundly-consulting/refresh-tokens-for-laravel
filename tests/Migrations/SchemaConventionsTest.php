@@ -79,9 +79,7 @@ it('emits the shipped table byte for byte on the bigint default', function (): v
     );
 });
 
-it('emits the same table for the legacy id alias', function (): void {
-    // `id` is what this package shipped before the toolkit's KeyType; a host that
-    // still has REFRESH_TOKENS_KEY_TYPE=id must get the same bigint column.
+it('falls back to the bigint table for an unrecognized key type', function (): void {
     migrateForKeyType('id');
 
     expect(createStatement('refresh_tokens'))->toContain('"owner_id" integer not null');
