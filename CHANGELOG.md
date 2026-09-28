@@ -18,8 +18,8 @@ Initial public release.
   persisted.
 - Atomic, single-query rotation that stops double spending, with guard-scoped redemption per
   owner type.
-- Always-on reuse detection: presenting a spent token revokes its whole family and fires
-  `RefreshTokenReuseDetected`.
+- Always-on reuse detection: presenting a spent token — to redeem it or to log out with it —
+  revokes its whole family and fires `RefreshTokenReuseDetected`.
 - Polymorphic owners (bigint, UUID or ULID), so users, API clients and admins share one table,
   via the `HasRefreshTokens` trait.
 - Device sessions through the owner-scoped `RefreshTokens::sessions($owner)` handle — `all()`,
@@ -34,7 +34,8 @@ Initial public release.
 - `RefreshTokenIssued`, `RefreshTokenRedeemed`, `SessionRevoked` and `RefreshTokenReuseDetected`
   events carrying ids only.
 - `RefreshTokens::prune(?days)` and the `refresh-tokens:prune` command for revoked and expired
-  rows (retention floored at one day).
+  rows, plus a `Prunable` model for `model:prune --model=…` (retention floored at one day on
+  every path).
 - `RefreshTokens::fake()` — a recording, still-performing fake with `assertIssued(for:)`,
   `assertRedeemed()`, `assertRotated()`, `assertRevoked(for:, reason:)`, `assertEnriched()`,
   `assertPruned()` and an `assertNothing…()` for each; it records calls made through the facade,

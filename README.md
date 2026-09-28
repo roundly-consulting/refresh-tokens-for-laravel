@@ -103,6 +103,7 @@ The published `config/refresh-tokens.php`:
 |---|---|---|---|---|
 | `table` | string | `refresh_tokens` | `REFRESH_TOKENS_TABLE` | Table name. |
 | `model` | class-string | `RefreshToken::class` | — | Model class; swap for a host subclass. |
+| `device_type_cast` | string | `DeviceType::class` | — | Eloquent cast for the `device_type` column. The packaged `DeviceType` enum (`desktop`/`mobile`/`tablet`/`bot`/`unknown`) by default; set `'string'` (or any Eloquent cast) to store a free-form device name verbatim. An empty value falls back to the enum. |
 | `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Primary-key type shared by every owner model, driving the `owner_id` column: `bigint`, `uuid`, or `ulid`. An unrecognized value falls back to `bigint`. |
 | `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Default sliding token lifetime per issue/rotation (per-issue override: `IssueContext::$ttl`). |
 | `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Default absolute cap on a session, stored when the family is rooted (per-issue override: `IssueContext::$absoluteTtl`). `0` disables. |
@@ -376,7 +377,8 @@ by hand.
 
 ### Reuse detection
 
-Presenting an already-rotated token is a theft signal. The **entire token family** is revoked,
+Presenting an already-rotated token — to `redeem()`/`rotate()`, or to `revoke()` (see
+[Revoke / logout](#revoke--logout)) — is a theft signal. The **entire token family** is revoked,
 the host callback is invoked for every live member's access token, and a
 `RefreshTokenReuseDetected` event fires — all automatically, no config switch. The family revoke
 re-scans until a pass revokes nothing, and a replacement issued into a family around the moment it
@@ -404,6 +406,22 @@ RefreshTokens::sessions($user)->revokeAll();         // global logout — return
 RefreshTokens::sessions($user)->revokeAll(RevocationReason::CredentialsChanged);
 RefreshTokens::session($row)->revoke();              // one row you hold (reason defaults to Manual)
 ```
+
+`revoke($plain)` returns `true` when it ended a live session and `false` for an unknown token or
+one whose session had already ended — so calling it twice is safe.
+
+**Logging out with an already-rotated token** still ends the session. That token no longer holds
+it — the session lives on in the row it was rotated into — so revoking the spent row alone would
+let whoever rotated it keep refreshing. Instead:
+
+- **Outside `rotation.grace`** the spent token is a theft signal, handled exactly like a replay at
+  `redeem()`: the whole family is revoked as `ReuseDetected`, every live access reference is
+  denied, `RefreshTokenReuseDetected` fires, and `revoke()` returns `true`. The reason you passed
+  is not used, because the rows record why they really died.
+- **Inside `rotation.grace`** (your client's own refresh racing its logout) the family's live rows
+  are revoked with your reason, `SessionRevoked` fires for each, and no reuse event fires.
+
+A session caught mid-rotation is sealed either way, so the in-flight replacement is refused.
 
 Every revoke verb takes an optional `RevocationReason`, persisted in `revoked_reason` and carried
 on `SessionRevoked`: `Rotated`, `Logout`, `LogoutAll`, `ReuseDetected`, `Expired`, `Manual`,
@@ -540,13 +558,15 @@ Hook these on the host side; they carry ids/scalars only (never the model or pla
 
 ### Pruning
 
-Dead rows (revoked/expired past `prune.after`) are force-deleted by `RefreshTokens::prune()`, the
-command (a thin shell over it) or `model:prune`. The package does **not** self-schedule — the host
-schedules it:
+Dead rows (revoked/expired past `prune.after`) are force-deleted by `RefreshTokens::prune()` or
+the `refresh-tokens:prune` command (a thin shell over it). The package does **not** self-schedule —
+the host schedules it:
 
 ```php
-// bootstrap/app.php or a scheduler
-$schedule->command('refresh-tokens:prune')->daily();
+// routes/console.php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('refresh-tokens:prune')->daily();
 ```
 
 ```bash
@@ -565,14 +585,27 @@ less than a day ago would destroy **reuse-detection evidence**: a rotated token 
 after revocation, then re-presented by a thief, finds no row and fires no family revoke. Keep the
 retention window comfortably longer than your access-token TTL so the theft signal survives.
 
+Laravel's `model:prune` works too — the model is `Prunable`, reading the same clamped
+`prune.after` window — but a bare `php artisan model:prune` only discovers models under
+`app/Models`, so it never finds the package's model. Name it (or your subclass, if you swapped
+`refresh-tokens.model`):
+
+```bash
+php artisan model:prune --model="RoundlyConsulting\RefreshTokens\Models\RefreshToken"
+```
+
+If you schedule `model:prune` for your own models as well, run `refresh-tokens:prune` alongside it
+rather than relying on discovery.
+
 ## Security
 
 - **SHA-256 at rest** (allowlisted SHA-2 only) under a unique index; the plaintext is returned
   once and never persisted, and `token_hash`/`access_reference` are hidden from serialization.
 - **Single-query anti-double-spend** rotation (`WHERE revoked_at IS NULL` compare-and-swap) — no
   transaction, no row lock; works identically on PostgreSQL and SQLite.
-- **Always-on family revocation** on reuse detection, race-hardened so no rotated replacement
-  survives the theft response and the signal never spams on replayed dead tokens.
+- **Always-on family revocation** on reuse detection — a spent token presented to redeem *or* to
+  log out — race-hardened so no rotated replacement survives the theft response and the signal
+  never spams on replayed dead tokens.
 - **Absolute session lifetime** (`absolute_ttl`, stored per family) caps a rotation chain so a
   stolen-but-active session can't be refreshed forever.
 - **Guard-scoped redemption** (`redeem($plain, ownerType: …)`): a token presented at another
