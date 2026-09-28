@@ -32,7 +32,7 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * looks is caught by that sweep, one inserted after it finds its family sealed.
  *
  * @internal a building block of the session revokes — reach it through
- *           `RefreshTokens::sessions($owner)->revoke…()`.
+ *           `RefreshTokens::sessions($owner)->revoke…()` or `RefreshTokens::revoke($plain)`.
  */
 final readonly class SealPendingRotationsAction
 {

@@ -77,8 +77,10 @@ class RefreshTokensManager
     }
 
     /**
-     * Revoke a token by its plaintext (logout with the token in hand). Idempotent; false
-     * when no live token matched.
+     * Revoke a token by its plaintext (logout with the token in hand). An already-rotated
+     * token ends the lineage it was rotated into — as reuse (family revoked, reuse event),
+     * or with `$reason` inside `rotation.grace`. True when a live session ended;
+     * idempotent, false for an unknown token or an already-ended session.
      */
     public function revoke(#[SensitiveParameter] string $plain, RevocationReason $reason = RevocationReason::Logout): bool
     {

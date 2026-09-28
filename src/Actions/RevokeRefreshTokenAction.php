@@ -4,21 +4,37 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\RefreshTokens\Actions;
 
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
+use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Support\RotationGrace;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 use SensitiveParameter;
 
 /**
  * Revoke a token by its plaintext — logout with the token in hand. The plaintext is
- * looked up by its at-rest digest, never stored or compared raw. Idempotent: an
- * unknown or already revoked token revokes nothing and returns false.
+ * looked up by its at-rest digest, never stored or compared raw.
+ *
+ * A token already **rotated** no longer holds the session: it lives on in the row it
+ * was rotated into. Presenting it is the same theft signal {@see RedeemRefreshTokenAction}
+ * acts on, so it gets the same response — the whole family is revoked as
+ * `ReuseDetected` and `RefreshTokenReuseDetected` fires. Inside `rotation.grace` (a
+ * benign single-flight race with the client's own refresh) the lineage is ended with
+ * the caller's `$reason` instead, with no reuse signal. Either way a session caught
+ * mid-rotation is sealed, so the in-flight replacement is refused.
+ *
+ * Returns true when the call ended a live session; false for an unknown token or one
+ * whose session had already ended (idempotent).
  */
 final readonly class RevokeRefreshTokenAction
 {
     public function __construct(
         private TokenHasher $hasher,
         private RevokeSessionAction $revokeSession,
+        private RevokeTokenFamilyAction $revokeFamily,
+        private SealPendingRotationsAction $seal,
     ) {}
 
     public function execute(#[SensitiveParameter] string $plain, RevocationReason $reason = RevocationReason::Logout): bool
@@ -27,6 +43,53 @@ final readonly class RevokeRefreshTokenAction
             ->where('token_hash', $this->hasher->hash($plain))
             ->first();
 
-        return $row !== null && $this->revokeSession->execute($row, $reason);
+        if ($row === null) {
+            return false;
+        }
+
+        if (! $this->wasRotated($row) && $this->revokeSession->execute($row, $reason)) {
+            return true;
+        }
+
+        // Rotated before the lookup, or by a refresh racing this logout between the
+        // lookup and the claim: re-read, so the lineage it was rotated into is ended.
+        $row = TokenModel::query()->whereKey($row->getKey())->first();
+
+        return $row !== null && $this->wasRotated($row) && $this->endRotatedLineage($row, $reason);
+    }
+
+    private function wasRotated(RefreshToken $row): bool
+    {
+        return $row->revoked_at !== null && $row->revoked_reason === RevocationReason::Rotated;
+    }
+
+    /**
+     * @param  RefreshToken  $row  a spent (rotated) row, freshly read
+     */
+    private function endRotatedLineage(RefreshToken $row, RevocationReason $reason): bool
+    {
+        $benign = $row->revoked_at !== null && RotationGrace::covers($row->revoked_at, CarbonImmutable::now());
+
+        // Seal first, like every session revoke: a replacement inserted before the seal
+        // looks is caught by the sweep below, one inserted after finds its family sealed.
+        $sealed = $this->seal->execute(
+            TokenModel::query()->forFamily($row->family_id),
+            $benign ? $reason : RevocationReason::ReuseDetected,
+        ) > 0;
+
+        if (! $benign) {
+            return $this->revokeFamily->execute($row) > 0 || $sealed;
+        }
+
+        /** @var Collection<int, RefreshToken> $live */
+        $live = TokenModel::query()->forFamily($row->family_id)->active()->get();
+
+        $revoked = $sealed;
+
+        foreach ($live as $member) {
+            $revoked = $this->revokeSession->execute($member, $reason) || $revoked;
+        }
+
+        return $revoked;
     }
 }

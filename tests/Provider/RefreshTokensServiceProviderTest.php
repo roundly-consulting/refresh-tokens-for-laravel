@@ -135,3 +135,11 @@ it('reports the effective, floored prune window in about', function (mixed $conf
     'below the floor' => [0, '1 day(s)'],
     'numeric string' => ['7', '7 day(s)'],
 ]);
+
+it('reads a numeric-string rotation grace in about', function (): void {
+    config()->set('refresh-tokens.rotation.grace', '45');
+
+    Artisan::call('about', ['--only' => 'refresh-tokens']);
+
+    expect(Artisan::output())->toMatch('/Rotation grace\W+45s/');
+});

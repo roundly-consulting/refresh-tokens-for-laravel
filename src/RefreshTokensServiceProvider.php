@@ -12,6 +12,7 @@ use RoundlyConsulting\RefreshTokens\Commands\PruneRefreshTokensCommand;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Support\PruneWindow;
+use RoundlyConsulting\RefreshTokens\Support\RotationGrace;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
@@ -60,7 +61,7 @@ final class RefreshTokensServiceProvider extends PackageServiceProvider
     private function aboutSection(): array
     {
         $absolute = $this->seconds('refresh-tokens.absolute_ttl', 7_776_000);
-        $grace = $this->seconds('refresh-tokens.rotation.grace', 0);
+        $grace = RotationGrace::seconds();
         $revoker = $this->app->make(AccessTokenRevoker::class);
 
         return [

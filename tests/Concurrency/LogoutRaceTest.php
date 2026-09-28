@@ -212,3 +212,29 @@ it('seals a pending rotation exactly once when two revokes race for it', functio
 
     Event::assertNotDispatched(SessionRevoked::class);
 });
+
+it('ends the lineage when the token is rotated between a logout lookup and its claim', function (): void {
+    $user = User::factory()->create();
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+
+    $raced = false;
+    $rotation = null;
+
+    DB::listen(function (QueryExecuted $query) use (&$raced, &$rotation, $a): void {
+        // The logout has read the row as live; a refresh rotates it before the claim.
+        if ($raced || ! str_starts_with(strtolower($query->sql), 'select') || ! str_contains($query->sql, 'token_hash')) {
+            return;
+        }
+
+        $raced = true;
+
+        $rotation = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    });
+
+    expect(RefreshTokens::revoke($a->plainText))->toBeTrue()
+        ->and($raced)->toBeTrue()
+        ->and($rotation?->newRefreshToken->token->fresh()?->revoked_reason)->toBe(RevocationReason::ReuseDetected)
+        ->and(familyIsLive($a->token->family_id))->toBeFalse();
+
+    $this->revoker->assertRevoked('acc-b');
+});

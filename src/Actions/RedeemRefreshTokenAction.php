@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenRedeemed;
+use RoundlyConsulting\RefreshTokens\Support\RotationGrace;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 use SensitiveParameter;
@@ -53,7 +54,7 @@ final readonly class RedeemRefreshTokenAction
         // Not usable: either revoked (a reuse signal unless within grace) or merely
         // expired (no family revoke — just null).
         if (! $row->isUsable()) {
-            if ($row->revoked_at !== null && ! $this->withinGrace($row->revoked_at, $now)) {
+            if ($row->revoked_at !== null && ! RotationGrace::covers($row->revoked_at, $now)) {
                 $this->revokeFamily->execute($row);
             }
 
@@ -74,7 +75,7 @@ final readonly class RedeemRefreshTokenAction
             // A concurrent redemption already won the race.
             $fresh = TokenModel::query()->whereKey($row->getKey())->first();
 
-            if ($fresh !== null && $fresh->revoked_at !== null && $this->withinGrace($fresh->revoked_at, $now)) {
+            if ($fresh !== null && $fresh->revoked_at !== null && RotationGrace::covers($fresh->revoked_at, $now)) {
                 return null; // benign single-flight retry within grace
             }
 
@@ -99,23 +100,5 @@ final readonly class RedeemRefreshTokenAction
         Event::dispatch(new RefreshTokenRedeemed($row->getKey(), $row->family_id, $row->owner_type, $row->owner_id));
 
         return new RedemptionResult($owner, $row->family_id, $row);
-    }
-
-    private function withinGrace(CarbonImmutable $revokedAt, CarbonImmutable $now): bool
-    {
-        $grace = $this->grace();
-
-        if ($grace <= 0) {
-            return false;
-        }
-
-        return $now->lessThanOrEqualTo($revokedAt->addSeconds($grace));
-    }
-
-    private function grace(): int
-    {
-        $grace = config('refresh-tokens.rotation.grace', 0);
-
-        return is_int($grace) && $grace > 0 ? $grace : 0;
     }
 }
