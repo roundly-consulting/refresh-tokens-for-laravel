@@ -201,8 +201,65 @@ window when you change it.
 
 ## Usage
 
-All examples use the `RefreshToken` facade
-(`RoundlyConsulting\RefreshTokens\Facades\RefreshToken`).
+All examples use the `RefreshTokens` facade
+(`RoundlyConsulting\RefreshTokens\Facades\RefreshTokens`). The whole API at a glance:
+
+```php
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
+
+RefreshTokens::for($user)->fromRequest($request)->linkedTo($jti)->issue(); // fluent issue
+RefreshTokens::issue($user, new IssueContext(/* … */));                    // the same, as a DTO
+RefreshTokens::redeem($plain, ownerType: $morph);   // ?RedemptionResult
+RefreshTokens::rotate($plain, new RotationContext(/* … */)); // ?RotationResult
+RefreshTokens::revoke($plain);                      // bool — logout with the token in hand
+RefreshTokens::prune(days: 7);                      // int — force-delete dead rows
+
+RefreshTokens::sessions($user)->all();              // active sessions, newest first
+RefreshTokens::sessions($user)->find($familyId);    // ?RefreshToken
+RefreshTokens::sessions($user)->revoke($familyId, RevocationReason::Logout); // bool
+RefreshTokens::sessions($user)->revokeOthers($currentJti);      // int
+RefreshTokens::sessions($user)->revokeAllExcept($keepFamilyId); // int
+RefreshTokens::sessions($user)->revokeAll();                    // int
+
+RefreshTokens::session($row)->enrich($device, $location); // row model or its key
+RefreshTokens::session($row)->revoke(RevocationReason::Manual); // bool
+```
+
+#### Without the facade
+
+The facade is sugar over `RoundlyConsulting\RefreshTokens\RefreshTokensManager` — inject it for
+the same API, or call the action behind any method directly:
+
+```php
+use RoundlyConsulting\RefreshTokens\Actions\RotateRefreshTokenAction;
+use RoundlyConsulting\RefreshTokens\RefreshTokensManager;
+
+final class RefreshController
+{
+    public function __construct(private RefreshTokensManager $refreshTokens) {}
+
+    public function __invoke(Request $request): JsonResponse
+    {
+        $rotation = $this->refreshTokens->rotate($request->string('refresh_token')->value());
+        // …
+    }
+}
+
+// The raw action:
+$rotation = app(RotateRefreshTokenAction::class)->execute($plain, new RotationContext);
+```
+
+| Facade method | Action |
+|---|---|
+| `issue()` / `for()->issue()` | `IssueRefreshTokenAction` |
+| `redeem()` | `RedeemRefreshTokenAction` |
+| `rotate()` | `RotateRefreshTokenAction` |
+| `revoke()` | `RevokeRefreshTokenAction` |
+| `prune()` | `PruneRefreshTokensAction` |
+| `sessions()->all()` / `find()` | `ListSessionsAction` / `FindSessionAction` |
+| `sessions()->revoke()` | `RevokeSessionByFamilyAction` |
+| `sessions()->revokeOthers()` / `revokeAllExcept()` / `revokeAll()` | `RevokeOtherSessionsAction` / `RevokeAllSessionsExceptAction` / `RevokeAllSessionsAction` |
+| `session()->enrich()` / `revoke()` | `EnrichSessionAction` / `RevokeSessionAction` |
 
 ### Issue
 
@@ -210,10 +267,10 @@ The host mints its access token **first**, then issues the refresh token linked 
 plaintext is returned **once** — never stored:
 
 ```php
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 
-$new = RefreshToken::issue($user, new IssueContext(
+$new = RefreshTokens::issue($user, new IssueContext(
     ipAddress: $request->ip(),
     userAgent: $request->userAgent(),
     accessReference: $access->jti, // opaque link to the host's access token
@@ -225,7 +282,7 @@ $plainText = $new->plainText;      // return to the client ONCE
 Or the fluent builder:
 
 ```php
-$new = RefreshToken::for($user)
+$new = RefreshTokens::for($user)
     ->fromRequest($request)        // fills ip + user agent
     ->linkedTo($access->jti)
     ->issue();
@@ -236,7 +293,7 @@ Per-session options (all optional):
 ```php
 $sid = (string) Str::uuid();       // e.g. already minted into the access token as `sid`
 
-$new = RefreshToken::for($client)
+$new = RefreshTokens::for($client)
     ->fromRequest($request)
     ->startingFamily($sid)         // root the family under YOUR uuid (IssueContext::$newFamilyId)
     ->ttl(3600)                    // sliding lifetime for this session
@@ -260,7 +317,7 @@ model — **never put secrets in it**. On Postgres (`jsonb`) object key order is
 token, exactly one wins; every failure mode collapses to `null`:
 
 ```php
-$result = RefreshToken::redeem($plainFromClient); // ?RedemptionResult
+$result = RefreshTokens::redeem($plainFromClient); // ?RedemptionResult
 if ($result === null) {
     // unknown / expired / revoked / race-lost / reuse — host maps to its own error
     throw ValidationException::withMessages([...]);
@@ -275,7 +332,7 @@ owner type is treated as unknown — `null`, **not consumed**, no reuse signal �
 user's token at the clients endpoint can neither burn the user's session nor trip reuse detection:
 
 ```php
-$result = RefreshToken::redeem($plainFromClient, ownerType: (new Client)->getMorphClass());
+$result = RefreshTokens::redeem($plainFromClient, ownerType: (new Client)->getMorphClass());
 ```
 
 `rotate()` does redeem + issue a same-family replacement in one call (mint the new access token
@@ -284,7 +341,7 @@ first, pass its reference in a `RotationContext`):
 ```php
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 
-$rotation = RefreshToken::rotate($plainFromClient, new RotationContext(
+$rotation = RefreshTokens::rotate($plainFromClient, new RotationContext(
     ownerType: (new User)->getMorphClass(),  // optional guard scope
     ipAddress: $request->ip(),              // current ip/ua replace the inherited ones
     userAgent: $request->userAgent(),
@@ -342,9 +399,10 @@ presentation; wrap your refresh endpoint in Laravel's throttle middleware to blu
 ```php
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 
-RefreshToken::revoke($plainFromClient);  // logout with token in hand (idempotent)
-RefreshToken::revokeAllFor($user);       // global logout — returns count revoked
-RefreshToken::revokeAllFor($user, RevocationReason::CredentialsChanged);
+RefreshTokens::revoke($plainFromClient);            // logout with token in hand; bool, idempotent
+RefreshTokens::sessions($user)->revokeAll();         // global logout — returns count revoked
+RefreshTokens::sessions($user)->revokeAll(RevocationReason::CredentialsChanged);
+RefreshTokens::session($row)->revoke();              // one row you hold (reason defaults to Manual)
 ```
 
 Every revoke verb takes an optional `RevocationReason`, persisted in `revoked_reason` and carried
@@ -352,8 +410,8 @@ on `SessionRevoked`: `Rotated`, `Logout`, `LogoutAll`, `ReuseDetected`, `Expired
 `CredentialsChanged`, `AccountDisabled`, `SessionLimit`, `Security`.
 
 A session revoked **mid-rotation** — its token already redeemed, the replacement not yet issued —
-has no active row for that instant. The family-level verbs (`revokeAllFor`, `revokeAll`,
-`revokeOthers`, `revokeAllExcept`, `revokeSession`) seal such a session too (relabel its redeemed
+has no active row for that instant. The session verbs (`sessions()->revokeAll()`,
+`revokeOthers()`, `revokeAllExcept()`, `revoke()`) seal such a session too (relabel its redeemed
 row with the reason, deny its access reference, fire `SessionRevoked`), so the in-flight replacement
 is refused — `rotate()` returns `null`, an explicit `issue(familyId: …)` throws
 `InvalidTokenFamilyException` or comes back already revoked. "Log out everywhere" cannot be outrun by
@@ -366,25 +424,29 @@ rotation, so address a session by its **family id** — the stable session id (a
 claim for your access token). `$row->sessionStartedAt()` returns when the family began.
 
 ```php
-$sessions = RefreshToken::listFor($user);                  // active rows, newest first
-$session  = RefreshToken::findSession($user, $familyId);   // ?RefreshToken — active row of that family
-RefreshToken::revokeSession($user, $familyId);             // bool — revokes every active row of it
-RefreshToken::revokeAllExcept($user, $currentFamilyId);    // "log out my other devices"; int
-RefreshToken::revokeOthers($user, $currentAccess->jti);    // same, keyed by access reference
-RefreshToken::revokeAll($user);                            // revoke every session
+$sessions = RefreshTokens::sessions($user);
+
+$sessions->all();                              // active rows, newest first
+$sessions->find($familyId);                    // ?RefreshToken — active row of that family
+$sessions->revoke($familyId);                  // bool — revokes every active row of it
+$sessions->revokeAllExcept($currentFamilyId);  // "log out my other devices"; int
+$sessions->revokeOthers($currentAccess->jti);  // same, keyed by access reference
+$sessions->revokeAll();                        // revoke every session
 
 // On the owner model via the trait:
 $user->refreshTokens();  // MorphMany, all tokens
 $user->sessions();       // MorphMany, active tokens only
 ```
 
-`findSession`/`revokeSession` are owner-scoped (another owner's family ⇒ `null`/`false`) and
-validate the id as a UUID before any query (malformed ⇒ `null`/`false`, never a database error).
-`revokeSession` revokes **every** active row of the family — a grace-window rotation can briefly
+The handle is owner-scoped: another owner's family — including one of a same-id owner of another
+type — is unknown (`find()` ⇒ `null`, `revoke()` ⇒ `false`, nothing touched). Ids are validated as
+UUIDs before any query (malformed ⇒ `null`/`false`, never a database error). `revoke()` revokes
+**every** active row of the family — a grace-window rotation can briefly
 leave two — denying each access reference once. `revokeAllExcept` with `null` or an unrecognisable
 id revokes everything (fail closed).
 
-The trait also adds `$user->…()` verbs that read as the user acting on itself:
+The trait also adds `$user->…()` verbs that read as the user acting on itself. Each one delegates
+to the manager, so `RefreshTokens::fake()` records them too:
 
 ```php
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
@@ -392,7 +454,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 $new = $user->issueRefreshToken(new IssueContext(accessReference: $access->jti));
 $user->findSession($familyId);              // ?RefreshToken
 $user->revokeSession($familyId);            // bool
-$user->revokeAllSessions();                 // = RefreshToken::revokeAllFor($user); returns count
+$user->revokeAllSessions();                 // = RefreshTokens::sessions($user)->revokeAll(); returns count
 $user->revokeOtherSessions($currentAccess->jti); // keep current, revoke the rest; returns count
 ```
 
@@ -445,13 +507,14 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\LocationData;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 
 // Pass the RefreshToken model you already hold, or its id:
-RefreshToken::enrich($new->token,
+RefreshTokens::session($new->token)->enrich(
     new DeviceData(browser: 'Firefox', os: 'Linux', deviceType: DeviceType::Desktop, isBot: false),
     new LocationData(country: 'Slovakia', city: 'Bratislava', countryCode: 'SK', ipAddress: '203.0.113.9'),
 );
 ```
 
-`enrich()` accepts the `RefreshToken` model, an int, or a string key. **Write semantics:** it only
+`session()` accepts the `RefreshToken` model, an int, or a string key (an unknown key throws
+`SessionNotFoundException`). **Write semantics:** it only
 ever touches device/geo columns — never the auth columns. The six device columns are **always
 overwritten** (an absent `DeviceData` field nulls its column), while the location columns are
 written **only when a `LocationData` is supplied** — so a later device-only enrich never clobbers
@@ -477,8 +540,9 @@ Hook these on the host side; they carry ids/scalars only (never the model or pla
 
 ### Pruning
 
-Dead rows (revoked/expired past `prune.after`) are force-deleted by the command or
-`model:prune`. The package does **not** self-schedule — the host schedules it:
+Dead rows (revoked/expired past `prune.after`) are force-deleted by `RefreshTokens::prune()`, the
+command (a thin shell over it) or `model:prune`. The package does **not** self-schedule — the host
+schedules it:
 
 ```php
 // bootstrap/app.php or a scheduler
@@ -490,7 +554,13 @@ php artisan refresh-tokens:prune            # uses config('refresh-tokens.prune.
 php artisan refresh-tokens:prune --days=7   # override retention
 ```
 
-`--days` is floored at **1** (a value of `0` or a non-integer is rejected). Pruning tokens revoked
+```php
+RefreshTokens::prune();        // int — uses config('refresh-tokens.prune.after')
+RefreshTokens::prune(days: 7); // override retention
+```
+
+`--days` / `days:` is floored at **1** (a value of `0` or a non-integer is rejected;
+`prune(0)` throws `InvalidTokenConfigurationException`; a configured value below 1 is clamped). Pruning tokens revoked
 less than a day ago would destroy **reuse-detection evidence**: a rotated token pruned minutes
 after revocation, then re-presented by a thief, finds no row and fires no family revoke. Keep the
 retention window comfortably longer than your access-token TTL so the theft signal survives.
@@ -514,6 +584,34 @@ Intentionally host-owned (not this package): JWT minting/verification, jti denyl
 user-agent parsing, IP geolocation, HTTP routes/controllers, throttling, and cookie transport.
 
 ## Testing
+
+`RefreshTokens::fake()` swaps the manager for a **recording** fake. Calls still run for real —
+tokens are issued, redeemed and revoked in your test database, because a stub that answered
+`redeem()` differently from the real store would let a broken refresh flow pass — and every call
+is recorded, whether it came through the facade, an injected `RefreshTokensManager`,
+`for()->issue()`, `sessions()` / `session()` or the `HasRefreshTokens` trait:
+
+```php
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
+
+$fake = RefreshTokens::fake();
+
+// … exercise your login / refresh / logout endpoints …
+
+$fake->assertIssued(for: $user);
+$fake->assertIssued($user, fn (IssueContext $context): bool => $context->accessReference === $jti);
+$fake->assertRedeemed(by: $user);
+$fake->assertRotated(for: $user);
+$fake->assertRevoked(for: $user, reason: RevocationReason::CredentialsChanged);
+$fake->assertEnriched(for: $user);
+$fake->assertPruned();
+
+$fake->assertNothingIssued();   // …and assertNothingRedeemed/Rotated/Revoked/Enriched/Pruned()
+```
+
+A rotation is recorded as a rotation only (not also as a redeem and an issue). `assertRevoked()`
+matches every revoke verb — by plaintext, `sessions()->revoke…()`, `session()->revoke()` and the
+trait. `$fake->recorded()` returns every call as a `RecordedOperation`.
 
 Assert your access-token revocation with the shipped `FakeAccessTokenRevoker` — bind it in place
 of your real revoker and assert exactly which access references the package asked to deny, no
