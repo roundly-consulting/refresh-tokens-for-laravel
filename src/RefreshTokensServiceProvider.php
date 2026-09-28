@@ -11,6 +11,7 @@ use RoundlyConsulting\PackageToolkit\PackageServiceProvider;
 use RoundlyConsulting\RefreshTokens\Commands\PruneRefreshTokensCommand;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
+use RoundlyConsulting\RefreshTokens\Support\PruneWindow;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
@@ -72,7 +73,7 @@ final class RefreshTokensServiceProvider extends PackageServiceProvider
             'Hash algorithm' => $this->algorithm(),
             'Hash pepper' => $this->hasPepper() ? 'SET' : 'MISSING',
             'Rotation grace' => $grace === 0 ? 'STRICT' : $grace.'s',
-            'Prune after' => $this->seconds('refresh-tokens.prune.after', 30).' day(s)',
+            'Prune after' => PruneWindow::configuredDays().' day(s)',
             'Access-token revoker' => $revoker instanceof NullAccessTokenRevoker ? 'NONE (no-op)' : 'BOUND',
         ];
     }

@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\RefreshTokens\Actions;
 
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
+use RoundlyConsulting\RefreshTokens\Support\PruneWindow;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
@@ -15,11 +14,12 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  *
  * The window never drops below one day. Pruning a token revoked minutes ago would
  * destroy reuse-detection evidence: re-presented, it finds no row and fires no family
- * revoke. An explicit `$days` below the floor throws; a configured one is clamped.
+ * revoke. An explicit `$days` below the floor throws; a configured one is clamped —
+ * the same {@see PruneWindow} `php artisan model:prune` reads through the model.
  */
 final readonly class PruneRefreshTokensAction
 {
-    public const int MINIMUM_DAYS = 1;
+    public const int MINIMUM_DAYS = PruneWindow::MINIMUM_DAYS;
 
     /**
      * @throws InvalidTokenConfigurationException
@@ -30,21 +30,8 @@ final readonly class PruneRefreshTokensAction
             throw InvalidTokenConfigurationException::invalidPruneWindow($days, self::MINIMUM_DAYS);
         }
 
-        $cutoff = CarbonImmutable::now()->subDays($days ?? $this->configuredDays());
-
         return (int) TokenModel::query()
-            ->where(function (Builder $query) use ($cutoff): void {
-                $query
-                    ->where('revoked_at', '<', $cutoff)
-                    ->orWhere('expires_at', '<', $cutoff);
-            })
+            ->deadBefore(PruneWindow::cutoff($days))
             ->forceDelete();
-    }
-
-    private function configuredDays(): int
-    {
-        $configured = config('refresh-tokens.prune.after', 30);
-
-        return max(self::MINIMUM_DAYS, is_int($configured) ? $configured : 30);
     }
 }

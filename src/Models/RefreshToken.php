@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use RoundlyConsulting\RefreshTokens\Database\Factories\RefreshTokenFactory;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
+use RoundlyConsulting\RefreshTokens\Support\PruneWindow;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
@@ -147,7 +148,24 @@ class RefreshToken extends Model
     }
 
     /**
-     * Rows revoked or expired longer ago than `refresh-tokens.prune.after` days.
+     * Rows revoked or expired before `$cutoff`.
+     *
+     * @param  Builder<RefreshToken>  $query
+     * @return Builder<RefreshToken>
+     */
+    public function scopeDeadBefore(Builder $query, CarbonImmutable $cutoff): Builder
+    {
+        return $query->where(function (Builder $query) use ($cutoff): void {
+            $query
+                ->where('revoked_at', '<', $cutoff)
+                ->orWhere('expires_at', '<', $cutoff);
+        });
+    }
+
+    /**
+     * Rows revoked or expired longer ago than `refresh-tokens.prune.after` days — the
+     * same {@see PruneWindow} as `RefreshTokens::prune()`, so never under one day: a
+     * window of 0 would delete reuse-detection evidence, a negative one live tokens.
      *
      * `self::query()` — deliberately, not `TokenModel::query()`. This is called on
      * whatever model `php artisan model:prune` instantiated, and PHP forwards late
@@ -160,14 +178,7 @@ class RefreshToken extends Model
      */
     public function prunable(): Builder
     {
-        $after = config('refresh-tokens.prune.after', 30);
-        $cutoff = CarbonImmutable::now()->subDays(is_int($after) ? $after : 30);
-
-        return self::query()->where(function (Builder $query) use ($cutoff): void {
-            $query
-                ->where('revoked_at', '<', $cutoff)
-                ->orWhere('expires_at', '<', $cutoff);
-        });
+        return self::query()->deadBefore(PruneWindow::cutoff());
     }
 
     /**

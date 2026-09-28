@@ -124,3 +124,14 @@ it('reports a missing pepper and a disabled absolute ttl', function (): void {
         ->and($output)->toContain('INVALID')
         ->and($output)->not->toContain('md5');
 });
+
+it('reports the effective, floored prune window in about', function (mixed $configured, string $expected): void {
+    config()->set('refresh-tokens.prune.after', $configured);
+
+    Artisan::call('about', ['--only' => 'refresh-tokens']);
+
+    expect(Artisan::output())->toMatch('/Prune after\W+'.preg_quote($expected, '/').'/');
+})->with([
+    'below the floor' => [0, '1 day(s)'],
+    'numeric string' => ['7', '7 day(s)'],
+]);

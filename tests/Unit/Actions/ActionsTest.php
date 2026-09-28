@@ -92,5 +92,7 @@ it('clamps a configured prune window to one day and tolerates a non-int', functi
     expect(app(PruneRefreshTokensAction::class)->execute())->toBe($expected);
 })->with([
     'zero clamps to one day' => [0, 2],
+    'negative clamps to one day' => [-40, 2],
+    'numeric string reads as days' => ['1', 2],
     'non-int falls back to 30' => ['soon', 1],
 ]);
