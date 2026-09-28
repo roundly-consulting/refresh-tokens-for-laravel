@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\CustomRefreshToken;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
@@ -28,12 +28,12 @@ it('issues through the configured model when it is swapped before boot', functio
 
     expect('refresh-tokens.model')->toHonourModelSwap(CustomRefreshToken::class, function () use ($user): array {
         // The real issuing flow, not a resolver string check.
-        $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+        $new = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
         return [
             $new->token,
             // Every read-back seam a host would touch must land on the same class.
-            RefreshToken::listFor($user)->first(),
+            RefreshTokens::sessions($user)->all()->first(),
             $user->refreshTokens()->first(),
             $user->sessions()->first(),
         ];
@@ -55,12 +55,12 @@ it('issues through the configured model when it is swapped before boot', functio
  */
 it('redeems through the configured model when it is swapped before boot', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $new = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
     expect('refresh-tokens.model')->toHonourModelSwap(
         CustomRefreshToken::class,
         function () use ($new): array {
-            $result = RefreshToken::redeem($new->plainText);
+            $result = RefreshTokens::redeem($new->plainText);
 
             expect($result)->not->toBeNull();
 
@@ -76,14 +76,14 @@ it('redeems through the configured model when it is swapped before boot', functi
  */
 it('mints a rotated replacement into the family as the configured model', function (): void {
     $user = User::factory()->create();
-    $first = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $first = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
-    $result = RefreshToken::redeem($first->plainText);
+    $result = RefreshTokens::redeem($first->plainText);
 
     expect($result)->not->toBeNull();
 
     expect('refresh-tokens.model')->toHonourModelSwap(CustomRefreshToken::class, function () use ($user, $result): array {
-        $replacement = RefreshToken::issue($user, new IssueContext(
+        $replacement = RefreshTokens::issue($user, new IssueContext(
             accessReference: 'acc-b',
             familyId: $result->familyId,
         ));

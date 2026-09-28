@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\ServiceProvider;
 use RoundlyConsulting\RefreshTokens\Commands\PruneRefreshTokensCommand;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
-use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
-use RoundlyConsulting\RefreshTokens\Contracts\SessionManager;
-use RoundlyConsulting\RefreshTokens\RefreshTokens;
+use RoundlyConsulting\RefreshTokens\RefreshTokensManager;
 use RoundlyConsulting\RefreshTokens\RefreshTokensServiceProvider;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\CustomRefreshToken;
@@ -49,10 +47,8 @@ it('registers the prune command', function (): void {
         ->and(app(PruneRefreshTokensCommand::class))->toBeInstanceOf(PruneRefreshTokensCommand::class);
 });
 
-it('binds the manager, both contracts and the default revoker', function (): void {
-    expect(app(RefreshTokens::class))->toBe(app(RefreshTokens::class))
-        ->and(app(RefreshTokenManager::class))->toBe(app(RefreshTokens::class))
-        ->and(app(SessionManager::class))->toBe(app(RefreshTokens::class))
+it('binds the manager as a singleton and the default revoker', function (): void {
+    expect(app(RefreshTokensManager::class))->toBe(app(RefreshTokensManager::class))
         ->and(app(AccessTokenRevoker::class))->toBeInstanceOf(NullAccessTokenRevoker::class);
 });
 

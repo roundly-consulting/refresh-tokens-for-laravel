@@ -20,11 +20,11 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * mid-rotation are sealed first ({@see SealPendingRotationsAction}). Returns the
  * number of sessions ended.
  */
-final class RevokeAllSessionsExceptAction
+final readonly class RevokeAllSessionsExceptAction
 {
     public function __construct(
-        private readonly RevokeSessionAction $revokeSession,
-        private readonly SealPendingRotationsAction $seal,
+        private RevokeSessionAction $revokeSession,
+        private SealPendingRotationsAction $seal,
     ) {}
 
     public function execute(

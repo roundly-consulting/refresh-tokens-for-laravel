@@ -9,21 +9,29 @@ use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\SessionRevoked;
+use RoundlyConsulting\RefreshTokens\Exceptions\SessionNotFoundException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
- * Revoke a single session (refresh-token row). Idempotent: revoking an already
- * revoked row is a no-op — no duplicate access-token denial, no duplicate event.
+ * Revoke a single session (refresh-token row), given as a model or by its key.
+ * Idempotent: revoking an already revoked row is a no-op — no duplicate
+ * access-token denial, no duplicate event. A key naming no row throws
+ * {@see SessionNotFoundException}.
  */
-final class RevokeSessionAction
+final readonly class RevokeSessionAction
 {
     public function __construct(
-        private readonly AccessTokenRevoker $revoker,
+        private AccessTokenRevoker $revoker,
     ) {}
 
-    public function execute(RefreshToken $session, RevocationReason $reason = RevocationReason::Manual): bool
+    public function execute(RefreshToken|int|string $session, RevocationReason $reason = RevocationReason::Manual): bool
     {
+        if (! $session instanceof RefreshToken) {
+            $session = TokenModel::query()->whereKey($session)->first()
+                ?? throw SessionNotFoundException::forId($session);
+        }
+
         $claimed = TokenModel::query()
             ->whereKey($session->getKey())
             ->whereNull('revoked_at')

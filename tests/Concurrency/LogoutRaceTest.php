@@ -11,7 +11,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\SessionRevoked;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -37,13 +37,13 @@ function familyIsLive(string $familyId): bool
 it('ends a session caught mid-rotation by a global logout', function (): void {
     Event::fake([SessionRevoked::class]);
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
-    $inFlight = RefreshToken::redeem($a->plainText);
+    $inFlight = RefreshTokens::redeem($a->plainText);
 
-    expect(RefreshToken::revokeAllFor($user, RevocationReason::CredentialsChanged))->toBe(1);
+    expect(RefreshTokens::sessions($user)->revokeAll(RevocationReason::CredentialsChanged))->toBe(1);
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(accessReference: 'acc-b', familyId: $inFlight->familyId)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-b', familyId: $inFlight->familyId)))
         ->toThrow(InvalidTokenFamilyException::class);
 
     expect(familyIsLive($a->token->family_id))->toBeFalse()
@@ -58,67 +58,67 @@ it('ends a session caught mid-rotation by a global logout', function (): void {
 
 it('ends a session caught mid-rotation when that session is revoked by family id', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
-    $inFlight = RefreshToken::redeem($a->plainText);
+    $inFlight = RefreshTokens::redeem($a->plainText);
 
-    expect(RefreshToken::revokeSession($user, $inFlight->familyId))->toBeTrue();
+    expect(RefreshTokens::sessions($user)->revoke($inFlight->familyId))->toBeTrue();
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: $inFlight->familyId)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: $inFlight->familyId)))
         ->toThrow(InvalidTokenFamilyException::class);
 });
 
 it('seals the other sessions caught mid-rotation but keeps the one asked to be kept', function (): void {
     $user = User::factory()->create();
-    $kept = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-kept'));
-    $other = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-other'));
+    $kept = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-kept'));
+    $other = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-other'));
 
-    $keptInFlight = RefreshToken::redeem($kept->plainText);
-    $otherInFlight = RefreshToken::redeem($other->plainText);
+    $keptInFlight = RefreshTokens::redeem($kept->plainText);
+    $otherInFlight = RefreshTokens::redeem($other->plainText);
 
-    expect(RefreshToken::revokeAllExcept($user, $keptInFlight->familyId))->toBe(1);
+    expect(RefreshTokens::sessions($user)->revokeAllExcept($keptInFlight->familyId))->toBe(1);
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: $otherInFlight->familyId)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: $otherInFlight->familyId)))
         ->toThrow(InvalidTokenFamilyException::class);
 
-    expect(RefreshToken::issue($user, new IssueContext(familyId: $keptInFlight->familyId))->token->revoked_at)->toBeNull();
+    expect(RefreshTokens::issue($user, new IssueContext(familyId: $keptInFlight->familyId))->token->revoked_at)->toBeNull();
 });
 
 it('keeps the current session mid-rotation when revoking the others by access reference', function (): void {
     $user = User::factory()->create();
-    $current = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-current'));
-    $other = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-other'));
+    $current = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-current'));
+    $other = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-other'));
 
-    $currentInFlight = RefreshToken::redeem($current->plainText);
-    $otherInFlight = RefreshToken::redeem($other->plainText);
+    $currentInFlight = RefreshTokens::redeem($current->plainText);
+    $otherInFlight = RefreshTokens::redeem($other->plainText);
 
-    expect(RefreshToken::revokeOthers($user, 'acc-current'))->toBe(1);
+    expect(RefreshTokens::sessions($user)->revokeOthers('acc-current'))->toBe(1);
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: $otherInFlight->familyId)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: $otherInFlight->familyId)))
         ->toThrow(InvalidTokenFamilyException::class);
 
-    expect(RefreshToken::issue($user, new IssueContext(familyId: $currentInFlight->familyId))->token->revoked_at)->toBeNull();
+    expect(RefreshTokens::issue($user, new IssueContext(familyId: $currentInFlight->familyId))->token->revoked_at)->toBeNull();
 });
 
 it('never touches another owner or a rotation that already completed', function (): void {
     $user = User::factory()->create();
     $bystander = User::factory()->create();
 
-    $done = RefreshToken::issue($user, new IssueContext);
-    $replacement = RefreshToken::rotate($done->plainText)->newRefreshToken;
-    $theirs = RefreshToken::issue($bystander, new IssueContext);
-    $theirsInFlight = RefreshToken::redeem($theirs->plainText);
+    $done = RefreshTokens::issue($user, new IssueContext);
+    $replacement = RefreshTokens::rotate($done->plainText)->newRefreshToken;
+    $theirs = RefreshTokens::issue($bystander, new IssueContext);
+    $theirsInFlight = RefreshTokens::redeem($theirs->plainText);
 
-    expect(RefreshToken::revokeAllFor($user))->toBe(1); // the live replacement only
+    expect(RefreshTokens::sessions($user)->revokeAll())->toBe(1); // the live replacement only
 
     expect($done->token->fresh()->revoked_reason)->toBe(RevocationReason::Rotated)
         ->and($replacement->token->fresh()->revoked_reason)->toBe(RevocationReason::LogoutAll)
-        ->and(RefreshToken::issue($bystander, new IssueContext(familyId: $theirsInFlight->familyId))->token->revoked_at)->toBeNull();
+        ->and(RefreshTokens::issue($bystander, new IssueContext(familyId: $theirsInFlight->familyId))->token->revoked_at)->toBeNull();
 });
 
 it('self-revokes a replacement whose session was logged out around its insert', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
     $raced = false;
 
@@ -130,10 +130,10 @@ it('self-revokes a replacement whose session was logged out around its insert', 
         $raced = true;
 
         // The logout lands the instant the replacement row is written.
-        RefreshToken::revokeAllFor($user, RevocationReason::CredentialsChanged);
+        RefreshTokens::sessions($user)->revokeAll(RevocationReason::CredentialsChanged);
     });
 
-    $rotation = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    $rotation = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     expect($raced)->toBeTrue()
         ->and($rotation)->toBeNull()
@@ -142,7 +142,7 @@ it('self-revokes a replacement whose session was logged out around its insert', 
 
 it('collapses a rotation whose session is logged out between its redeem and its issue to null', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
     $raced = false;
 
@@ -153,18 +153,18 @@ it('collapses a rotation whose session is logged out between its redeem and its 
 
         $raced = true;
 
-        RefreshToken::revokeSession($user, RefreshTokenModel::query()->sole()->family_id);
+        RefreshTokens::sessions($user)->revoke(RefreshTokenModel::query()->sole()->family_id);
     });
 
-    expect(RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b')))->toBeNull()
+    expect(RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b')))->toBeNull()
         ->and($raced)->toBeTrue()
         ->and(familyIsLive($a->token->family_id))->toBeFalse();
 });
 
 it('self-revokes a replacement whose family was sealed between its checks and its insert', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $inFlight = RefreshToken::redeem($a->plainText);
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $inFlight = RefreshTokens::redeem($a->plainText);
 
     $raced = false;
 
@@ -176,10 +176,10 @@ it('self-revokes a replacement whose family was sealed between its checks and it
 
         $raced = true;
 
-        RefreshToken::revokeAllFor($user, RevocationReason::CredentialsChanged);
+        RefreshTokens::sessions($user)->revokeAll(RevocationReason::CredentialsChanged);
     });
 
-    $replacement = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-b', familyId: $inFlight->familyId));
+    $replacement = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-b', familyId: $inFlight->familyId));
 
     expect($raced)->toBeTrue()
         ->and($replacement->token->revoked_reason)->toBe(RevocationReason::CredentialsChanged)
@@ -190,8 +190,8 @@ it('self-revokes a replacement whose family was sealed between its checks and it
 it('seals a pending rotation exactly once when two revokes race for it', function (): void {
     Event::fake([SessionRevoked::class]);
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    RefreshToken::redeem($a->plainText);
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    RefreshTokens::redeem($a->plainText);
 
     $raced = false;
 
@@ -206,7 +206,7 @@ it('seals a pending rotation exactly once when two revokes race for it', functio
         RefreshTokenModel::query()->whereKey($a->token->getKey())->update(['revoked_reason' => RevocationReason::Logout->value]);
     });
 
-    expect(RefreshToken::revokeAllFor($user))->toBe(0)
+    expect(RefreshTokens::sessions($user)->revokeAll())->toBe(0)
         ->and($raced)->toBeTrue()
         ->and($a->token->fresh()->revoked_reason)->toBe(RevocationReason::Logout);
 

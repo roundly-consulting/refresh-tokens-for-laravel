@@ -7,7 +7,7 @@ use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
@@ -23,36 +23,36 @@ it('rejects issuing into a family that does not exist', function (): void {
     // Postgres never reached the check at all (the uuid column rejected the comparison
     // first), so the test passed on sqlite for the wrong reason. The malformed-input path
     // now has its own pins at the bottom of this file.
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: (string) Str::uuid())))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: (string) Str::uuid())))
         ->toThrow(InvalidTokenFamilyException::class);
 });
 
 it('rejects grafting a token into another user\'s family', function (): void {
     $owner = User::factory()->create();
     $intruder = User::factory()->create();
-    $rooted = RefreshToken::issue($owner, new IssueContext);
+    $rooted = RefreshTokens::issue($owner, new IssueContext);
 
-    expect(fn () => RefreshToken::issue($intruder, new IssueContext(familyId: $rooted->token->family_id)))
+    expect(fn () => RefreshTokens::issue($intruder, new IssueContext(familyId: $rooted->token->family_id)))
         ->toThrow(InvalidTokenFamilyException::class);
 });
 
 it('rejects issuing into a reuse-revoked family', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     // Re-presenting the rotated token kills the family via reuse detection.
-    RefreshToken::redeem($a->plainText);
+    RefreshTokens::redeem($a->plainText);
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: $a->token->family_id)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: $a->token->family_id)))
         ->toThrow(InvalidTokenFamilyException::class);
 });
 
 it('allows inheriting a live family the owner already holds', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext);
+    $a = RefreshTokens::issue($user, new IssueContext);
 
-    $b = RefreshToken::issue($user, new IssueContext(familyId: $a->token->family_id));
+    $b = RefreshTokens::issue($user, new IssueContext(familyId: $a->token->family_id));
 
     expect($b->token->family_id)->toBe($a->token->family_id)
         ->and($b->token->revoked_at)->toBeNull();
@@ -76,7 +76,7 @@ it('allows inheriting a live family the owner already holds', function (): void 
 it('rejects a malformed family id with the documented exception, on every driver', function (string $familyId): void {
     $user = User::factory()->create();
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: $familyId)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: $familyId)))
         ->toThrow(InvalidTokenFamilyException::class);
 })->with([
     'not a uuid at all' => 'ghost-family',
@@ -93,6 +93,6 @@ it('rejects a malformed family id with the documented exception, on every driver
 it('rejects a well-formed family id that names no family', function (): void {
     $user = User::factory()->create();
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: (string) Str::uuid())))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: (string) Str::uuid())))
         ->toThrow(InvalidTokenFamilyException::class);
 });

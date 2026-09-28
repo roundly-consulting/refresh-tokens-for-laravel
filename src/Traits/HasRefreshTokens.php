@@ -8,12 +8,11 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
-use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
-use RoundlyConsulting\RefreshTokens\Contracts\SessionManager;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
+use RoundlyConsulting\RefreshTokens\RefreshTokensManager;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 use SensitiveParameter;
 
@@ -22,6 +21,9 @@ use SensitiveParameter;
  * tokens and active sessions, plus idiomatic `$owner->…()` session verbs that
  * read as the owner acting on itself. Tokens hang off the polymorphic `owner`
  * relation, so several owner models share the one table without colliding.
+ *
+ * Every verb delegates to the {@see RefreshTokensManager} (never to an action), so
+ * `RefreshTokens::fake()` records calls made through the trait too.
  *
  * @mixin Model
  *
@@ -56,7 +58,7 @@ trait HasRefreshTokens
      */
     public function issueRefreshToken(IssueContext $context): NewRefreshToken
     {
-        return app(RefreshTokenManager::class)->issue($this, $context);
+        return app(RefreshTokensManager::class)->issue($this, $context);
     }
 
     /**
@@ -64,7 +66,7 @@ trait HasRefreshTokens
      */
     public function findSession(string $familyId): ?RefreshToken
     {
-        return app(SessionManager::class)->findSession($this, $familyId);
+        return app(RefreshTokensManager::class)->sessions($this)->find($familyId);
     }
 
     /**
@@ -72,7 +74,7 @@ trait HasRefreshTokens
      */
     public function revokeSession(string $familyId, RevocationReason $reason = RevocationReason::Logout): bool
     {
-        return app(SessionManager::class)->revokeSession($this, $familyId, $reason);
+        return app(RefreshTokensManager::class)->sessions($this)->revoke($familyId, $reason);
     }
 
     /**
@@ -81,7 +83,7 @@ trait HasRefreshTokens
      */
     public function revokeAllSessions(RevocationReason $reason = RevocationReason::LogoutAll): int
     {
-        return app(RefreshTokenManager::class)->revokeAllFor($this, $reason);
+        return app(RefreshTokensManager::class)->sessions($this)->revokeAll($reason);
     }
 
     /**
@@ -90,6 +92,6 @@ trait HasRefreshTokens
      */
     public function revokeOtherSessions(#[SensitiveParameter] ?string $currentAccessReference): int
     {
-        return app(SessionManager::class)->revokeOthers($this, $currentAccessReference);
+        return app(RefreshTokensManager::class)->sessions($this)->revokeOthers($currentAccessReference);
     }
 }

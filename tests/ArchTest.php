@@ -3,16 +3,18 @@
 declare(strict_types=1);
 
 use RoundlyConsulting\RefreshTokens\Actions\RedeemRefreshTokenAction;
+use RoundlyConsulting\RefreshTokens\Actions\RevokeRefreshTokenAction;
 use RoundlyConsulting\RefreshTokens\Actions\RevokeSessionAction;
 use RoundlyConsulting\RefreshTokens\Actions\RevokeTokenFamilyAction;
+use RoundlyConsulting\RefreshTokens\Actions\RotateRefreshTokenAction;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
-use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
-use RoundlyConsulting\RefreshTokens\Contracts\SessionManager;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Exceptions\RefreshTokenException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
-use RoundlyConsulting\RefreshTokens\RefreshTokens;
+use RoundlyConsulting\RefreshTokens\RefreshTokensManager;
+use RoundlyConsulting\RefreshTokens\Support\OwnerSessions;
+use RoundlyConsulting\RefreshTokens\Support\SessionHandle;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\Testing\Arch\ArchPresets;
 
@@ -39,7 +41,11 @@ arch('src only uses allowed vendor roots')
         'database_path',
         'now',
         '__',
-    ]);
+    ])
+    // The recording fake's assertions (src/Testing, only ever loaded by a host test
+    // suite). Pest's arch layer cannot match a PHPUnit class as an allowed root, so it is
+    // named here, exactly — nothing else from PHPUnit is permitted.
+    ->ignoring('PHPUnit\Framework\Assert');
 
 arch('no forbidden runtime vendors are imported')
     ->expect([
@@ -143,8 +149,9 @@ ArchPresets::strictTypes('RoundlyConsulting\RefreshTokens');
  * the moment a host uses the seam the config documents, shipped 7x across the fleet.
  *
  * Exempt here: RefreshToken, which `refresh-tokens.model` invites a host to subclass
- * (pinned by the preset below instead), and RefreshTokenException, the base every
- * refresh-tokens error extends so a host can catch them uniformly.
+ * (pinned by the preset below instead), RefreshTokenException, the base every
+ * refresh-tokens error extends so a host can catch them uniformly, and the manager plus
+ * its two sub-accessors, which the shipped fake extends.
  */
 // The exemptions go through the preset's `$ignoring` PARAMETER, not Pest's `->ignoring()`.
 // Only the parameter is checked for staleness: `::class` on a non-existent class is not a
@@ -155,7 +162,18 @@ ArchPresets::strictTypes('RoundlyConsulting\RefreshTokens');
 ArchPresets::finalByDefault('RoundlyConsulting\RefreshTokens', [
     RefreshTokenModel::class,
     RefreshTokenException::class,
+    // Extended by the shipped RefreshTokensFake / RecordingOwnerSessions /
+    // RecordingSessionHandle — `final` would be a fatal under RefreshTokens::fake().
+    RefreshTokensManager::class,
+    OwnerSessions::class,
+    SessionHandle::class,
 ]);
+
+/**
+ * Model traits delegate to the manager, never to an action, so `RefreshTokens::fake()`
+ * sees every call made through `HasRefreshTokens`.
+ */
+ArchPresets::modelsGoThroughTheFacade('RoundlyConsulting\RefreshTokens');
 
 /**
  * The one swappable model seam is `refresh-tokens.model`. Owners are polymorphic (any
@@ -258,13 +276,14 @@ it('marks every plaintext parameter as sensitive', function (array $target): voi
         expect($parameter->getAttributes(SensitiveParameter::class))->not->toBeEmpty();
     }
 })->with([
-    [[RefreshTokenManager::class, 'redeem']],
-    [[RefreshTokenManager::class, 'rotate']],
-    [[RefreshTokenManager::class, 'revoke']],
-    [[RefreshTokens::class, 'redeem']],
+    [[RefreshTokensManager::class, 'redeem']],
+    [[RefreshTokensManager::class, 'rotate']],
+    [[RefreshTokensManager::class, 'revoke']],
+    [[RevokeRefreshTokenAction::class, 'execute']],
+    [[RotateRefreshTokenAction::class, 'execute']],
     [[TokenHasher::class, 'hash']],
     [[AccessTokenRevoker::class, 'revoke']],
     [[IssueContext::class, '__construct']],
     [[RotationContext::class, '__construct']],
-    [[SessionManager::class, 'revokeOthers']],
+    [[OwnerSessions::class, 'revokeOthers']],
 ]);

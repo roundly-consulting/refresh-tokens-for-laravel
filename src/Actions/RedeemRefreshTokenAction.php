@@ -27,11 +27,11 @@ use SensitiveParameter;
  * revoke, no event. Presenting a user's token at a client-only refresh endpoint
  * must neither burn the user's session nor count as reuse.
  */
-final class RedeemRefreshTokenAction
+final readonly class RedeemRefreshTokenAction
 {
     public function __construct(
-        private readonly TokenHasher $hasher,
-        private readonly RevokeTokenFamilyAction $revokeFamily,
+        private TokenHasher $hasher,
+        private RevokeTokenFamilyAction $revokeFamily,
     ) {}
 
     public function execute(#[SensitiveParameter] string $plain, ?string $ownerType = null): ?RedemptionResult

@@ -16,11 +16,14 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 /**
  * The theft response: revoke every still-active member of a token's family, deny
  * each live member's access token, and fire the reuse-detected signal once.
+ *
+ * @internal a building block of {@see RedeemRefreshTokenAction}'s reuse detection —
+ *           never called on its own; reuse is detected by presenting a spent token.
  */
-final class RevokeTokenFamilyAction
+final readonly class RevokeTokenFamilyAction
 {
     public function __construct(
-        private readonly AccessTokenRevoker $revoker,
+        private AccessTokenRevoker $revoker,
     ) {}
 
     public function execute(RefreshToken $token): int

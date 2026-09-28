@@ -36,7 +36,7 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * row is re-checked and self-revoked if the family has since been killed or sealed,
  * so a rotation replacement can never outlive its family.
  */
-final class IssueRefreshTokenAction
+final readonly class IssueRefreshTokenAction
 {
     /**
      * The device and geolocation columns a family carries from row to row.
@@ -55,7 +55,7 @@ final class IssueRefreshTokenAction
     ];
 
     public function __construct(
-        private readonly TokenHasher $hasher,
+        private TokenHasher $hasher,
     ) {}
 
     /**

@@ -7,7 +7,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -31,14 +31,14 @@ it('issues, redeems, rotates and reuse-detects on every algorithm and pepper', f
     $user = User::factory()->create();
 
     // Issue: only the digest is stored, and it is the crypto digest of the plaintext.
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
     expect($a->plainText)->toMatch('/^[A-Za-z0-9_-]{64}$/')
         ->and($a->token->token_hash)->toBe((new TokenHasher)->hash($a->plainText))
         ->and($a->token->token_hash)->not->toContain($a->plainText);
 
     // Rotate: the replacement is live, the presented token is dead.
-    $b = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    $b = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     expect($b)->not->toBeNull()
         ->and($b->newRefreshToken->plainText)->not->toBe($a->plainText)
@@ -46,13 +46,13 @@ it('issues, redeems, rotates and reuse-detects on every algorithm and pepper', f
         ->and($b->newRefreshToken->token->fresh()->revoked_at)->toBeNull();
 
     // The replacement itself rotates — the digest lookup still finds its row.
-    $c = RefreshToken::rotate($b->newRefreshToken->plainText, new RotationContext(accessReference: 'acc-c'));
+    $c = RefreshTokens::rotate($b->newRefreshToken->plainText, new RotationContext(accessReference: 'acc-c'));
 
     expect($c)->not->toBeNull()
         ->and($c->redeemedFamilyId)->toBe($a->token->family_id);
 
     // Reuse of the long-dead token A kills the family and denies the live reference.
-    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull();
 
     $this->revoker->assertRevoked('acc-c');
     expect($c->newRefreshToken->token->fresh()->revoked_reason)->toBe(RevocationReason::ReuseDetected);
@@ -69,18 +69,18 @@ it('cannot redeem a token minted under a different pepper', function (): void {
     config()->set('refresh-tokens.hash.key', 'pepper-A');
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
     // Rotating the pepper invalidates the at-rest digest — by design.
     config()->set('refresh-tokens.hash.key', 'pepper-B');
 
-    expect(RefreshToken::redeem($new->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($new->plainText))->toBeNull();
 });
 
 it('never lets a weak configuration mint a token', function (): void {
     config()->set('refresh-tokens.token_length', 16);
     $user = User::factory()->create();
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext))
         ->toThrow(InvalidTokenConfigurationException::class);
 });

@@ -17,11 +17,11 @@ use SensitiveParameter;
  * reference. Passing a null current reference revokes them all. Sessions caught
  * mid-rotation are sealed first ({@see SealPendingRotationsAction}). Returns the count.
  */
-final class RevokeOtherSessionsAction
+final readonly class RevokeOtherSessionsAction
 {
     public function __construct(
-        private readonly RevokeSessionAction $revokeSession,
-        private readonly SealPendingRotationsAction $seal,
+        private RevokeSessionAction $revokeSession,
+        private SealPendingRotationsAction $seal,
     ) {}
 
     public function execute(

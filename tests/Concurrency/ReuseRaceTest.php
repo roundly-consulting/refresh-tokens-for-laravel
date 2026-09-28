@@ -9,7 +9,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -26,9 +26,9 @@ beforeEach(function (): void {
  */
 it('self-revokes a replacement issued into a family reuse killed around the insert', function (): void {
     $user = User::factory()->create();
-    $root = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $root = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
     // A sibling we can flip to reuse-detected the instant the replacement inserts.
-    $sibling = RefreshToken::issue($user, new IssueContext(
+    $sibling = RefreshTokens::issue($user, new IssueContext(
         accessReference: 'acc-sib',
         familyId: $root->token->family_id,
     ));
@@ -50,7 +50,7 @@ it('self-revokes a replacement issued into a family reuse killed around the inse
         ]);
     });
 
-    $rotation = RefreshToken::rotate($root->plainText, new RotationContext(accessReference: 'acc-b'));
+    $rotation = RefreshTokens::rotate($root->plainText, new RotationContext(accessReference: 'acc-b'));
 
     expect($raced)->toBeTrue()
         ->and($rotation)->toBeNull();
@@ -73,8 +73,8 @@ it('self-revokes a replacement issued into a family reuse killed around the inse
  */
 it('re-scans and revokes a family member inserted after the first revoke snapshot', function (): void {
     $user = User::factory()->create();
-    $root = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $rotation = RefreshToken::rotate($root->plainText, new RotationContext(accessReference: 'acc-b'));
+    $root = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $rotation = RefreshTokens::rotate($root->plainText, new RotationContext(accessReference: 'acc-b'));
     $replacement = $rotation->newRefreshToken->token;
 
     $raced = false;
@@ -95,7 +95,7 @@ it('re-scans and revokes a family member inserted after the first revoke snapsho
     });
 
     // Re-presenting the rotated root triggers reuse detection / the family revoke.
-    expect(RefreshToken::redeem($root->plainText))->toBeNull()
+    expect(RefreshTokens::redeem($root->plainText))->toBeNull()
         ->and($raced)->toBeTrue();
 
     $late = RefreshTokenModel::query()->where('access_reference', 'acc-late')->first();
@@ -113,17 +113,17 @@ it('re-scans and revokes a family member inserted after the first revoke snapsho
  */
 it('kills a family whose newest row is mid-rotation when an older token is replayed', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $b = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'))->newRefreshToken;
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $b = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'))->newRefreshToken;
 
     // The legitimate holder's refresh has claimed B (the auth path: redeem → mint → issue)…
-    $inFlight = RefreshToken::redeem($b->plainText);
+    $inFlight = RefreshTokens::redeem($b->plainText);
 
     // …when the thief replays the long-rotated A.
-    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull();
 
     // The in-flight replacement must not be born into the killed family.
-    expect(fn () => RefreshToken::issue($user, new IssueContext(
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(
         accessReference: 'acc-c',
         familyId: $inFlight->familyId,
     )))->toThrow(InvalidTokenFamilyException::class);
@@ -133,23 +133,23 @@ it('kills a family whose newest row is mid-rotation when an older token is repla
 
 it('kills the family when a strict concurrent redemption of the same token loses', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
 
-    $winner = RefreshToken::redeem($a->plainText);
+    $winner = RefreshTokens::redeem($a->plainText);
 
     // grace = 0: a second presentation of the just-claimed token is reuse, however
     // close in time — the verdict must not depend on whether the winner's replacement
     // happens to be inserted yet.
-    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull();
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(familyId: $winner->familyId)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: $winner->familyId)))
         ->toThrow(InvalidTokenFamilyException::class);
 });
 
 it('collapses a rotation whose family is killed between its redeem and its issue to null', function (): void {
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $b = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'))->newRefreshToken;
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $b = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'))->newRefreshToken;
 
     $raced = false;
 
@@ -161,10 +161,10 @@ it('collapses a rotation whose family is killed between its redeem and its issue
 
         $raced = true;
 
-        RefreshToken::redeem($a->plainText); // the thief replays A mid-rotation
+        RefreshTokens::redeem($a->plainText); // the thief replays A mid-rotation
     });
 
-    $rotation = RefreshToken::rotate($b->plainText, new RotationContext(accessReference: 'acc-c'));
+    $rotation = RefreshTokens::rotate($b->plainText, new RotationContext(accessReference: 'acc-c'));
 
     expect($raced)->toBeTrue()
         ->and($rotation)->toBeNull()

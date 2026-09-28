@@ -11,14 +11,14 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenIssued;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 it('issues a token storing only the hash and returns the plaintext once', function (): void {
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext(
+    $new = RefreshTokens::issue($user, new IssueContext(
         ipAddress: '203.0.113.9',
         userAgent: 'PestBrowser/1.0',
         accessReference: 'acc-ref-1',
@@ -43,9 +43,9 @@ it('issues a token storing only the hash and returns the plaintext once', functi
 it('roots a new family when none is provided and inherits when one is', function (): void {
     $user = User::factory()->create();
 
-    $first = RefreshToken::issue($user, new IssueContext);
-    $inherited = RefreshToken::issue($user, new IssueContext(familyId: $first->token->family_id));
-    $fresh = RefreshToken::issue($user, new IssueContext);
+    $first = RefreshTokens::issue($user, new IssueContext);
+    $inherited = RefreshTokens::issue($user, new IssueContext(familyId: $first->token->family_id));
+    $fresh = RefreshTokens::issue($user, new IssueContext);
 
     expect($inherited->token->family_id)->toBe($first->token->family_id)
         ->and($fresh->token->family_id)->not->toBe($first->token->family_id);
@@ -55,7 +55,7 @@ it('honours the configured ttl', function (): void {
     config()->set('refresh-tokens.ttl', 3600);
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
     expect($new->token->expires_at->timestamp - now()->timestamp)->toEqualWithDelta(3600, 5);
 });
@@ -64,7 +64,7 @@ it('fires RefreshTokenIssued with the row, family and owner', function (): void 
     Event::fake();
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
     Event::assertDispatched(
         RefreshTokenIssued::class,
@@ -78,7 +78,7 @@ it('fires RefreshTokenIssued with the row, family and owner', function (): void 
 it('issues through the fluent builder from a request', function (): void {
     $user = User::factory()->create();
 
-    $new = RefreshToken::for($user)
+    $new = RefreshTokens::for($user)
         ->withIp('198.51.100.5')
         ->withUserAgent('Fluent/2.0')
         ->linkedTo('acc-ref-fluent')
@@ -96,11 +96,11 @@ it('roots a new family under a caller-chosen uuid', function (): void {
     $user = User::factory()->create();
     $sid = (string) Str::uuid();
 
-    $new = RefreshToken::issue($user, new IssueContext(newFamilyId: $sid));
+    $new = RefreshTokens::issue($user, new IssueContext(newFamilyId: $sid));
 
     expect($new->token->family_id)->toBe($sid)
         ->and($new->token->family_started_at)->not->toBeNull()
-        ->and(RefreshToken::findSession($user, $sid)?->is($new->token))->toBeTrue();
+        ->and(RefreshTokens::sessions($user)->find($sid)?->is($new->token))->toBeTrue();
 
     Event::assertDispatched(RefreshTokenIssued::class, fn (RefreshTokenIssued $e): bool => $e->familyId === $sid);
 });
@@ -117,7 +117,7 @@ it('rejects a malformed newFamilyId before touching the database', function (str
         $queries++;
     });
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(newFamilyId: $familyId)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(newFamilyId: $familyId)))
         ->toThrow(InvalidTokenFamilyException::class, 'is not a valid UUID');
 
     expect($queries)->toBe(0);
@@ -130,9 +130,9 @@ it('rejects a malformed newFamilyId before touching the database', function (str
 it('rejects a newFamilyId that already names a family, of any owner', function (): void {
     $user = User::factory()->create();
     $other = User::factory()->create();
-    $existing = RefreshToken::issue($other, new IssueContext);
+    $existing = RefreshTokens::issue($other, new IssueContext);
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(newFamilyId: $existing->token->family_id)))
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(newFamilyId: $existing->token->family_id)))
         ->toThrow(InvalidTokenFamilyException::class, 'already exists');
 });
 
@@ -145,26 +145,26 @@ it('treats family ids case-insensitively on every driver', function (): void {
     $user = User::factory()->create();
     $sid = (string) Str::uuid();
 
-    $root = RefreshToken::issue($user, new IssueContext(newFamilyId: strtoupper($sid)));
+    $root = RefreshTokens::issue($user, new IssueContext(newFamilyId: strtoupper($sid)));
 
     expect($root->token->family_id)->toBe($sid)
         ->and($root->token->fresh()->family_id)->toBe($sid)
-        ->and(RefreshToken::findSession($user, strtoupper($sid))?->is($root->token))->toBeTrue()
-        ->and(fn () => RefreshToken::issue($user, new IssueContext(newFamilyId: strtoupper($sid))))
+        ->and(RefreshTokens::sessions($user)->find(strtoupper($sid))?->is($root->token))->toBeTrue()
+        ->and(fn () => RefreshTokens::issue($user, new IssueContext(newFamilyId: strtoupper($sid))))
         ->toThrow(InvalidTokenFamilyException::class, 'already exists');
 
-    $child = RefreshToken::issue($user, new IssueContext(familyId: strtoupper($sid)));
+    $child = RefreshTokens::issue($user, new IssueContext(familyId: strtoupper($sid)));
 
     expect($child->token->family_id)->toBe($sid)
-        ->and(RefreshToken::revokeSession($user, strtoupper($sid)))->toBeTrue()
-        ->and(RefreshToken::listFor($user))->toBeEmpty();
+        ->and(RefreshTokens::sessions($user)->revoke(strtoupper($sid)))->toBeTrue()
+        ->and(RefreshTokens::sessions($user)->all())->toBeEmpty();
 });
 
 it('rejects familyId and newFamilyId together', function (): void {
     $user = User::factory()->create();
-    $existing = RefreshToken::issue($user, new IssueContext);
+    $existing = RefreshTokens::issue($user, new IssueContext);
 
-    expect(fn () => RefreshToken::issue($user, new IssueContext(
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(
         familyId: $existing->token->family_id,
         newFamilyId: (string) Str::uuid(),
     )))->toThrow(InvalidTokenFamilyException::class, 'not both');
@@ -174,7 +174,7 @@ it('honours a per-issue ttl over the configured one', function (): void {
     config()->set('refresh-tokens.ttl', 3600);
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext(ttl: 120));
+    $new = RefreshTokens::issue($user, new IssueContext(ttl: 120));
 
     expect($new->token->expires_at->timestamp - now()->timestamp)->toEqualWithDelta(120, 5);
 });
@@ -182,7 +182,7 @@ it('honours a per-issue ttl over the configured one', function (): void {
 it('rejects an out-of-range per-issue lifetime', function (IssueContext $context, string $message): void {
     $user = User::factory()->create();
 
-    expect(fn () => RefreshToken::issue($user, $context))
+    expect(fn () => RefreshTokens::issue($user, $context))
         ->toThrow(InvalidTokenConfigurationException::class, $message);
 })->with([
     'zero ttl' => [new IssueContext(ttl: 0), 'ttl [0]'],
@@ -193,11 +193,11 @@ it('rejects an out-of-range per-issue lifetime', function (IssueContext $context
 it('stores session meta at issue', function (): void {
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext(meta: ['guard' => 'users', 'amr' => ['pwd', 'otp']]));
+    $new = RefreshTokens::issue($user, new IssueContext(meta: ['guard' => 'users', 'amr' => ['pwd', 'otp']]));
 
     // toEqual, not toBe: Postgres `jsonb` does not preserve object key order (list order is kept).
     expect($new->token->fresh()->meta)->toEqual(['guard' => 'users', 'amr' => ['pwd', 'otp']])
-        ->and(RefreshToken::issue($user, new IssueContext(meta: []))->token->fresh()->meta)->toBeNull();
+        ->and(RefreshTokens::issue($user, new IssueContext(meta: []))->token->fresh()->meta)->toBeNull();
 });
 
 it('carries every new option through the fluent builder', function (): void {
@@ -205,7 +205,7 @@ it('carries every new option through the fluent builder', function (): void {
     $user = User::factory()->create();
     $sid = (string) Str::uuid();
 
-    $new = RefreshToken::for($user)
+    $new = RefreshTokens::for($user)
         ->startingFamily($sid)
         ->ttl(600)
         ->absoluteTtl(3600)

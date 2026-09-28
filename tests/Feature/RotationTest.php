@@ -15,16 +15,16 @@ use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenIssued;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenRedeemed;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 afterEach(fn () => Carbon::setTestNow());
 
 it('redeems a valid token, returning the user and revoking the row as rotated', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    $result = RefreshToken::redeem($new->plainText);
+    $result = RefreshTokens::redeem($new->plainText);
 
     expect($result)->toBeInstanceOf(RedemptionResult::class)
         ->and($result->user->getAuthIdentifier())->toBe($user->id)
@@ -37,24 +37,24 @@ it('redeems a valid token, returning the user and revoking the row as rotated', 
 
 it('returns null on a second redeem of the same token', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    RefreshToken::redeem($new->plainText);
+    RefreshTokens::redeem($new->plainText);
 
-    expect(RefreshToken::redeem($new->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($new->plainText))->toBeNull();
 });
 
 it('returns null for an unknown token', function (): void {
-    expect(RefreshToken::redeem('this-token-was-never-issued'))->toBeNull();
+    expect(RefreshTokens::redeem('this-token-was-never-issued'))->toBeNull();
 });
 
 it('returns null for an expired token without revoking the family', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-1'));
+    $new = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-1'));
 
     Carbon::setTestNow(now()->addYear());
 
-    expect(RefreshToken::redeem($new->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($new->plainText))->toBeNull();
 
     // Expired-only presentation is not a reuse signal.
     expect($new->token->fresh()->revoked_reason)->toBeNull();
@@ -62,9 +62,9 @@ it('returns null for an expired token without revoking the family', function ():
 
 it('rotates: redeem then issue a same-family replacement in one call', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    $rotation = RefreshToken::rotate($new->plainText, new RotationContext(accessReference: 'acc-new'));
+    $rotation = RefreshTokens::rotate($new->plainText, new RotationContext(accessReference: 'acc-new'));
 
     expect($rotation)->toBeInstanceOf(RotationResult::class)
         ->and($rotation->redeemedFamilyId)->toBe($new->token->family_id)
@@ -76,15 +76,15 @@ it('rotates: redeem then issue a same-family replacement in one call', function 
 });
 
 it('returns null from rotate when the redeem fails', function (): void {
-    expect(RefreshToken::rotate('unknown-token'))->toBeNull();
+    expect(RefreshTokens::rotate('unknown-token'))->toBeNull();
 });
 
 it('fires RefreshTokenRedeemed exactly once on a successful redeem', function (): void {
     Event::fake([RefreshTokenRedeemed::class]);
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    RefreshToken::redeem($new->plainText);
+    RefreshTokens::redeem($new->plainText);
 
     Event::assertDispatchedTimes(RefreshTokenRedeemed::class, 1);
     Event::assertDispatched(
@@ -99,16 +99,16 @@ it('fires RefreshTokenRedeemed exactly once on a successful redeem', function ()
 it('does not fire RefreshTokenRedeemed on unknown, expired or second-redeem paths', function (): void {
     Event::fake([RefreshTokenRedeemed::class]);
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    RefreshToken::redeem('never-issued');           // unknown
-    RefreshToken::redeem($new->plainText);           // success (one event)
-    RefreshToken::redeem($new->plainText);           // second redeem → null
+    RefreshTokens::redeem('never-issued');           // unknown
+    RefreshTokens::redeem($new->plainText);           // success (one event)
+    RefreshTokens::redeem($new->plainText);           // second redeem → null
 
     Carbon::setTestNow(now()->addYear());
-    $expired = RefreshToken::issue($user, new IssueContext);
+    $expired = RefreshTokens::issue($user, new IssueContext);
     Carbon::setTestNow(now()->addYears(2));
-    RefreshToken::redeem($expired->plainText);       // expired → null
+    RefreshTokens::redeem($expired->plainText);       // expired → null
 
     Event::assertDispatchedTimes(RefreshTokenRedeemed::class, 1);
 });
@@ -116,12 +116,12 @@ it('does not fire RefreshTokenRedeemed on unknown, expired or second-redeem path
 it('claims the row but returns null and emits no success when the owner is gone', function (): void {
     Event::fake([RefreshTokenRedeemed::class]);
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
     // Owner deleted after issue: the row is still claimed/revoked, but redeem yields null.
     $user->delete();
 
-    expect(RefreshToken::redeem($new->plainText))->toBeNull()
+    expect(RefreshTokens::redeem($new->plainText))->toBeNull()
         ->and($new->token->fresh()->revoked_at)->not->toBeNull()
         ->and($new->token->fresh()->revoked_reason)->toBe(RevocationReason::Rotated);
 
@@ -131,9 +131,9 @@ it('claims the row but returns null and emits no success when the owner is gone'
 it('rotate fires one RefreshTokenRedeemed and one RefreshTokenIssued', function (): void {
     Event::fake([RefreshTokenRedeemed::class, RefreshTokenIssued::class]);
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext); // one issued (for the original)
+    $new = RefreshTokens::issue($user, new IssueContext); // one issued (for the original)
 
-    RefreshToken::rotate($new->plainText, new RotationContext(accessReference: 'acc-new'));
+    RefreshTokens::rotate($new->plainText, new RotationContext(accessReference: 'acc-new'));
 
     // The redeem of the old token, plus the issue of the replacement.
     Event::assertDispatchedTimes(RefreshTokenRedeemed::class, 1);
@@ -151,16 +151,16 @@ it('rotate fires one RefreshTokenRedeemed and one RefreshTokenIssued', function 
  */
 dataset('refresh paths', [
     'rotate()' => [
-        fn (string $plain, ?string $ip, ?string $ua, ?array $meta): ?NewRefreshToken => RefreshToken::rotate(
+        fn (string $plain, ?string $ip, ?string $ua, ?array $meta): ?NewRefreshToken => RefreshTokens::rotate(
             $plain,
             new RotationContext(ipAddress: $ip, userAgent: $ua, accessReference: 'acc-next', meta: $meta),
         )?->newRefreshToken,
     ],
     'redeem() + issue(familyId)' => [
         function (string $plain, ?string $ip, ?string $ua, ?array $meta): ?NewRefreshToken {
-            $redeemed = RefreshToken::redeem($plain);
+            $redeemed = RefreshTokens::redeem($plain);
 
-            return $redeemed === null ? null : RefreshToken::issue($redeemed->user, new IssueContext(
+            return $redeemed === null ? null : RefreshTokens::issue($redeemed->user, new IssueContext(
                 ipAddress: $ip,
                 userAgent: $ua,
                 accessReference: 'acc-next',
@@ -173,14 +173,13 @@ dataset('refresh paths', [
 
 function enrichedRoot(User $user): NewRefreshToken
 {
-    $root = RefreshToken::issue($user, new IssueContext(
+    $root = RefreshTokens::issue($user, new IssueContext(
         ipAddress: '198.51.100.1',
         userAgent: 'Root/1.0',
         meta: ['guard' => 'users', 'amr' => ['pwd'], 'auth_time' => 1_767_268_800],
     ));
 
-    RefreshToken::enrich(
-        $root->token,
+    RefreshTokens::session($root->token)->enrich(
         new DeviceData(browser: 'Firefox', browserVersion: '130', os: 'Linux', osVersion: '6', deviceType: DeviceType::Desktop, isBot: false),
         new LocationData(country: 'Slovakia', city: 'Bratislava', countryCode: 'SK', ipAddress: '198.51.100.1'),
     );
@@ -269,9 +268,9 @@ it('keeps the family timestamps identical across consecutive rotations', functio
 
 it('applies a rotation ttl to the replacement', function (): void {
     $user = User::factory()->create();
-    $root = RefreshToken::issue($user, new IssueContext);
+    $root = RefreshTokens::issue($user, new IssueContext);
 
-    $rotation = RefreshToken::rotate($root->plainText, new RotationContext(ttl: 300));
+    $rotation = RefreshTokens::rotate($root->plainText, new RotationContext(ttl: 300));
 
     expect($rotation?->newRefreshToken->token->expires_at->timestamp - now()->timestamp)->toEqualWithDelta(300, 5);
 });
@@ -279,13 +278,13 @@ it('applies a rotation ttl to the replacement', function (): void {
 it('inherits from the newest family row, not an older one', function (): void {
     $user = User::factory()->create();
     Carbon::setTestNow('2026-01-01 12:00:00');
-    $root = RefreshToken::issue($user, new IssueContext(meta: ['v' => 1]));
+    $root = RefreshTokens::issue($user, new IssueContext(meta: ['v' => 1]));
 
     Carbon::setTestNow('2026-01-02 12:00:00');
-    $second = RefreshToken::rotate($root->plainText, new RotationContext(meta: ['v' => 2]));
+    $second = RefreshTokens::rotate($root->plainText, new RotationContext(meta: ['v' => 2]));
 
     Carbon::setTestNow('2026-01-03 12:00:00');
-    $explicit = RefreshToken::issue($user, new IssueContext(familyId: $root->token->family_id));
+    $explicit = RefreshTokens::issue($user, new IssueContext(familyId: $root->token->family_id));
 
     expect($second?->newRefreshToken->token->fresh()->meta)->toBe(['v' => 2])
         ->and($explicit->token->fresh()->meta)->toBe(['v' => 2]);

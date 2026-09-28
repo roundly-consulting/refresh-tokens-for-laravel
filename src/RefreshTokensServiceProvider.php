@@ -10,8 +10,6 @@ use RoundlyConsulting\PackageToolkit\Package;
 use RoundlyConsulting\PackageToolkit\PackageServiceProvider;
 use RoundlyConsulting\RefreshTokens\Commands\PruneRefreshTokensCommand;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
-use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
-use RoundlyConsulting\RefreshTokens\Contracts\SessionManager;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
@@ -38,9 +36,7 @@ final class RefreshTokensServiceProvider extends PackageServiceProvider
         // migration calls exists before the migrator can run.
         $this->registerBlueprintMacros();
 
-        $this->app->singleton(RefreshTokens::class, fn (Application $app): RefreshTokens => new RefreshTokens($app));
-        $this->app->alias(RefreshTokens::class, RefreshTokenManager::class);
-        $this->app->alias(RefreshTokens::class, SessionManager::class);
+        $this->app->singleton(RefreshTokensManager::class, fn (Application $app): RefreshTokensManager => new RefreshTokensManager($app));
 
         // Default no-op access-token revoker so the package works standalone; a host
         // (e.g. jwt-for-laravel's jti denylist) rebinds this to a real adapter.

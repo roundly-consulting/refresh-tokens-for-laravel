@@ -11,7 +11,7 @@ use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Support\RefreshTokenBlueprint;
@@ -102,10 +102,10 @@ it('stores a sha512 digest at full width and still redeems', function (): void {
     config()->set('refresh-tokens.hash.algo', 'sha512');
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
     expect(strlen($new->token->fresh()->token_hash))->toBe(128)
-        ->and(RefreshToken::redeem($new->plainText))->not->toBeNull();
+        ->and(RefreshTokens::redeem($new->plainText))->not->toBeNull();
 });
 
 it('resolves the configured key type', function (string $value, KeyType $type): void {
@@ -193,7 +193,7 @@ it('issues via the fluent builder filling ip and user agent from a request', fun
     // Seed a live root in the family so inheriting it passes the ownership check.
     RefreshTokenModel::factory()->forOwner($user)->forFamily($familyId)->create();
 
-    $new = RefreshToken::for($user)->fromRequest($request)->inFamily($familyId)->issue();
+    $new = RefreshTokens::for($user)->fromRequest($request)->inFamily($familyId)->issue();
 
     expect($new)->toBeInstanceOf(NewRefreshToken::class)
         ->and($new->token->ip_address)->toBe('203.0.113.7')

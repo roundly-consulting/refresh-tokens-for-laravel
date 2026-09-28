@@ -38,7 +38,7 @@ it('issues a refresh token through the trait verb', function (): void {
         ->and($new->token->access_reference)->toBe('acc-1');
 });
 
-it('revokeAllSessions revokes every active session like revokeAllFor', function (): void {
+it('revokeAllSessions revokes every active session like sessions()->revokeAll', function (): void {
     $this->app->instance(AccessTokenRevoker::class, new FakeAccessTokenRevoker);
     $user = User::factory()->create();
     RefreshToken::factory()->forOwner($user)->count(3)->create();

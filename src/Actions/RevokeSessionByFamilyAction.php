@@ -20,11 +20,11 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * Owner-scoped and uuid-validated: another owner's family or a malformed id
  * revokes nothing and returns false.
  */
-final class RevokeSessionByFamilyAction
+final readonly class RevokeSessionByFamilyAction
 {
     public function __construct(
-        private readonly RevokeSessionAction $revokeSession,
-        private readonly SealPendingRotationsAction $seal,
+        private RevokeSessionAction $revokeSession,
+        private SealPendingRotationsAction $seal,
     ) {}
 
     public function execute(

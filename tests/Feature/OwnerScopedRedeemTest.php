@@ -8,7 +8,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenRedeemed;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenReuseDetected;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\Client;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -26,9 +26,9 @@ beforeEach(function (): void {
 it('treats a foreign owner type as unknown and leaves the token usable', function (): void {
     Event::fake([RefreshTokenRedeemed::class, RefreshTokenReuseDetected::class]);
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-u'));
+    $new = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-u'));
 
-    expect(RefreshToken::redeem($new->plainText, Client::class))->toBeNull();
+    expect(RefreshTokens::redeem($new->plainText, Client::class))->toBeNull();
 
     $row = $new->token->fresh();
     expect($row->revoked_at)->toBeNull()
@@ -40,7 +40,7 @@ it('treats a foreign owner type as unknown and leaves the token usable', functio
     Event::assertNotDispatched(RefreshTokenReuseDetected::class);
 
     // Then the right endpoint redeems it normally.
-    $result = RefreshToken::redeem($new->plainText, User::class);
+    $result = RefreshTokens::redeem($new->plainText, User::class);
 
     expect($result)->not->toBeNull()
         ->and($result?->user->is($user))->toBeTrue();
@@ -50,30 +50,30 @@ it('treats a foreign owner type as unknown and leaves the token usable', functio
 it('does not treat a rotated token presented at a foreign endpoint as reuse', function (): void {
     Event::fake([RefreshTokenReuseDetected::class]);
     $user = User::factory()->create();
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $rotation = RefreshToken::rotate($a->plainText, new RotationContext(ownerType: User::class, accessReference: 'acc-b'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $rotation = RefreshTokens::rotate($a->plainText, new RotationContext(ownerType: User::class, accessReference: 'acc-b'));
 
     // The rotated (dead) token shown at the clients endpoint: invisible, so no family kill.
-    expect(RefreshToken::redeem($a->plainText, Client::class))->toBeNull()
+    expect(RefreshTokens::redeem($a->plainText, Client::class))->toBeNull()
         ->and($rotation?->newRefreshToken->token->fresh()->revoked_at)->toBeNull();
 
     $this->revoker->assertNothingRevoked();
     Event::assertNotDispatched(RefreshTokenReuseDetected::class);
 
     // At its own endpoint the same presentation IS reuse.
-    expect(RefreshToken::redeem($a->plainText, User::class))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText, User::class))->toBeNull();
     $this->revoker->assertRevoked('acc-b');
     Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
 });
 
 it('scopes a one-call rotation to the owner type', function (): void {
     $client = Client::factory()->create();
-    $new = RefreshToken::issue($client, new IssueContext);
+    $new = RefreshTokens::issue($client, new IssueContext);
 
-    expect(RefreshToken::rotate($new->plainText, new RotationContext(ownerType: User::class)))->toBeNull()
+    expect(RefreshTokens::rotate($new->plainText, new RotationContext(ownerType: User::class)))->toBeNull()
         ->and($new->token->fresh()->revoked_at)->toBeNull();
 
-    $rotation = RefreshToken::rotate($new->plainText, new RotationContext(ownerType: Client::class));
+    $rotation = RefreshTokens::rotate($new->plainText, new RotationContext(ownerType: Client::class));
 
     expect($rotation)->not->toBeNull()
         ->and($rotation?->user)->toBeInstanceOf(Client::class)
@@ -82,7 +82,7 @@ it('scopes a one-call rotation to the owner type', function (): void {
 
 it('redeems any owner type when no scope is given', function (): void {
     $client = Client::factory()->create();
-    $new = RefreshToken::issue($client, new IssueContext);
+    $new = RefreshTokens::issue($client, new IssueContext);
 
-    expect(RefreshToken::redeem($new->plainText)?->user)->toBeInstanceOf(Client::class);
+    expect(RefreshTokens::redeem($new->plainText)?->user)->toBeInstanceOf(Client::class);
 });

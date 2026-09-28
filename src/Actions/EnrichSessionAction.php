@@ -20,7 +20,7 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * {@see LocationData} is supplied, so a device-only enrich never clobbers previously
  * stored geo.
  */
-final class EnrichSessionAction
+final readonly class EnrichSessionAction
 {
     public function execute(RefreshToken|int|string $session, DeviceData $device, ?LocationData $location = null): void
     {

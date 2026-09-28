@@ -9,7 +9,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenReuseDetected;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
@@ -24,11 +24,11 @@ it('revokes the whole family and fires the signal when a rotated token is reused
     Event::fake([RefreshTokenReuseDetected::class]);
     $user = User::factory()->create();
 
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $rotation = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $rotation = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     // Present the already-rotated token A again — theft signal.
-    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull();
 
     // The live replacement B is now revoked as reuse-detected.
     $b = $rotation->newRefreshToken->token->fresh();
@@ -53,12 +53,12 @@ it('does not re-fire the reuse signal when a dead token is replayed', function (
     Event::fake([RefreshTokenReuseDetected::class]);
     $user = User::factory()->create();
 
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
-    RefreshToken::redeem($a->plainText); // first reuse: family revoked, one signal
-    RefreshToken::redeem($a->plainText); // replayed dead token: revokes nothing
-    RefreshToken::redeem($a->plainText); // and again
+    RefreshTokens::redeem($a->plainText); // first reuse: family revoked, one signal
+    RefreshTokens::redeem($a->plainText); // replayed dead token: revokes nothing
+    RefreshTokens::redeem($a->plainText); // and again
 
     // Exactly one event and one denial, no matter how often the dead token is replayed.
     Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
@@ -70,10 +70,10 @@ it('treats a re-presented token as benign within the grace window', function ():
     Event::fake([RefreshTokenReuseDetected::class]);
     $user = User::factory()->create();
 
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $rotation = RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $rotation = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
-    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull();
 
     // Within grace: replacement B untouched, no denial, no event.
     expect($rotation->newRefreshToken->token->fresh()->revoked_at)->toBeNull();
@@ -90,18 +90,18 @@ it('stays benign exactly at the grace boundary and turns to reuse just past it',
     // Freeze on a whole second so the stored (second-precision) revoked_at and the
     // in-memory clock agree exactly at the grace boundary.
     Carbon::setTestNow(now()->startOfSecond());
-    $a = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    RefreshToken::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'));
 
     // Exactly at the boundary (revoked_at + grace): still benign.
     Carbon::setTestNow(now()->addSeconds(30));
-    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull();
     $this->revoker->assertNothingRevoked();
     Event::assertNotDispatched(RefreshTokenReuseDetected::class);
 
     // One second past the boundary: reuse.
     Carbon::setTestNow(now()->addSeconds(1));
-    expect(RefreshToken::redeem($a->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull();
     $this->revoker->assertRevoked('acc-b');
     Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
 });

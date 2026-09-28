@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\CustomRefreshToken;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -24,24 +24,24 @@ beforeEach(function (): void {
 it('issues, lists and relates through the configured model', function (): void {
     $user = User::factory()->create();
 
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
     expect($new->token)->toBeInstanceOf(CustomRefreshToken::class)
-        ->and(RefreshToken::listFor($user)->first())->toBeInstanceOf(CustomRefreshToken::class)
+        ->and(RefreshTokens::sessions($user)->all()->first())->toBeInstanceOf(CustomRefreshToken::class)
         ->and($user->refreshTokens()->first())->toBeInstanceOf(CustomRefreshToken::class)
         ->and($user->sessions()->first())->toBeInstanceOf(CustomRefreshToken::class);
 });
 
 it('redeems and revokes through the configured model', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    $result = RefreshToken::redeem($new->plainText);
+    $result = RefreshTokens::redeem($new->plainText);
 
     expect($result)->not->toBeNull();
 
-    $second = RefreshToken::issue($user, new IssueContext);
-    RefreshToken::revoke($second->plainText);
+    $second = RefreshTokens::issue($user, new IssueContext);
+    RefreshTokens::revoke($second->plainText);
 
     expect($second->token->fresh()->revoked_at)->not->toBeNull();
 });

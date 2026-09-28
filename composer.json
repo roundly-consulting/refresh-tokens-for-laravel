@@ -119,7 +119,7 @@
                 "RoundlyConsulting\\RefreshTokens\\RefreshTokensServiceProvider"
             ],
             "aliases": {
-                "RefreshToken": "RoundlyConsulting\\RefreshTokens\\Facades\\RefreshToken"
+                "RefreshTokens": "RoundlyConsulting\\RefreshTokens\\Facades\\RefreshTokens"
             }
         }
     },

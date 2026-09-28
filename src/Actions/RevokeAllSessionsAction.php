@@ -12,10 +12,10 @@ use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
  * Revoke every active session for an owner (global logout). Thin wrapper over
  * {@see RevokeOtherSessionsAction} with no session preserved.
  */
-final class RevokeAllSessionsAction
+final readonly class RevokeAllSessionsAction
 {
     public function __construct(
-        private readonly RevokeOtherSessionsAction $revokeOthers,
+        private RevokeOtherSessionsAction $revokeOthers,
     ) {}
 
     public function execute(Authenticatable&Model $owner, RevocationReason $reason = RevocationReason::LogoutAll): int

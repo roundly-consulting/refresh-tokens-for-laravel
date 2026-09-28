@@ -57,4 +57,13 @@ final class InvalidTokenConfigurationException extends RefreshTokenException
             $ttl,
         ));
     }
+
+    public static function invalidPruneWindow(int $days, int $minimum): self
+    {
+        return new self(sprintf(
+            'refresh-tokens prune window [%d] must be at least %d day(s) to preserve reuse-detection evidence.',
+            $days,
+            $minimum,
+        ));
+    }
 }

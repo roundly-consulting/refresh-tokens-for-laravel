@@ -6,7 +6,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\DeviceData;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\LocationData;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Exceptions\SessionNotFoundException;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
@@ -20,7 +20,7 @@ it('enriches a session with device and location without touching auth columns', 
     $originalFamily = $session->family_id;
     $originalExpiry = $session->expires_at;
 
-    RefreshToken::enrich($session->getKey(), new DeviceData(
+    RefreshTokens::session($session->getKey())->enrich(new DeviceData(
         browser: 'Firefox',
         browserVersion: '128.0',
         os: 'Linux',
@@ -58,7 +58,7 @@ it('enriches device-only when no location is supplied', function (): void {
     $user = User::factory()->create();
     $session = RefreshTokenModel::factory()->forOwner($user)->create();
 
-    RefreshToken::enrich($session->getKey(), new DeviceData(deviceType: DeviceType::Mobile));
+    RefreshTokens::session($session->getKey())->enrich(new DeviceData(deviceType: DeviceType::Mobile));
 
     expect($session->fresh()->device_type)->toBe(DeviceType::Mobile)
         ->and($session->fresh()->country)->toBeNull();
@@ -68,7 +68,7 @@ it('accepts the model directly and equals enrich-by-id', function (): void {
     $user = User::factory()->create();
     $session = RefreshTokenModel::factory()->forOwner($user)->create();
 
-    RefreshToken::enrich($session, new DeviceData(browser: 'Safari', deviceType: DeviceType::Tablet));
+    RefreshTokens::session($session)->enrich(new DeviceData(browser: 'Safari', deviceType: DeviceType::Tablet));
 
     expect($session->fresh()->browser)->toBe('Safari')
         ->and($session->fresh()->device_type)->toBe(DeviceType::Tablet);
@@ -79,7 +79,7 @@ it('preserves stored geo when a later enrich is device-only', function (): void 
     $session = RefreshTokenModel::factory()->forOwner($user)->create();
 
     // First enrich writes geo.
-    RefreshToken::enrich($session, new DeviceData(browser: 'Chrome'), new LocationData(
+    RefreshTokens::session($session)->enrich(new DeviceData(browser: 'Chrome'), new LocationData(
         country: 'Slovakia',
         city: 'Kosice',
         countryCode: 'SK',
@@ -87,7 +87,7 @@ it('preserves stored geo when a later enrich is device-only', function (): void 
     ));
 
     // Second enrich is device-only: geo must survive untouched.
-    RefreshToken::enrich($session, new DeviceData(browser: 'Chrome', os: 'macOS'));
+    RefreshTokens::session($session)->enrich(new DeviceData(browser: 'Chrome', os: 'macOS'));
 
     $fresh = $session->fresh();
     expect($fresh->os)->toBe('macOS')
@@ -98,5 +98,5 @@ it('preserves stored geo when a later enrich is device-only', function (): void 
 });
 
 it('throws when enriching an unknown session id', function (): void {
-    RefreshToken::enrich(999999, new DeviceData);
+    RefreshTokens::session(999999)->enrich(new DeviceData);
 })->throws(SessionNotFoundException::class);

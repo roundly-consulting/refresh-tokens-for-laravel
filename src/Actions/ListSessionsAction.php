@@ -13,7 +13,7 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 /**
  * The owner's active sessions (not revoked, not expired), newest first.
  */
-final class ListSessionsAction
+final readonly class ListSessionsAction
 {
     /**
      * @return Collection<int, RefreshToken>

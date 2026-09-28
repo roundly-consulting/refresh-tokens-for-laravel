@@ -7,14 +7,15 @@ namespace RoundlyConsulting\RefreshTokens\Support;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
-use RoundlyConsulting\RefreshTokens\Contracts\RefreshTokenManager;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
+use RoundlyConsulting\RefreshTokens\RefreshTokensManager;
 use SensitiveParameter;
 
 /**
  * Fluent sugar over {@see IssueContext} for the common controller case:
- * `RefreshToken::for($owner)->fromRequest($request)->linkedTo($jti)->issue()`.
+ * `RefreshTokens::for($owner)->fromRequest($request)->linkedTo($jti)->issue()`.
+ * The terminal `issue()` goes through the manager, so `RefreshTokens::fake()` records it.
  */
 final class PendingIssue
 {
@@ -36,7 +37,7 @@ final class PendingIssue
     private ?array $meta = null;
 
     public function __construct(
-        private readonly RefreshTokenManager $manager,
+        private readonly RefreshTokensManager $manager,
         private readonly Authenticatable&Model $owner,
     ) {}
 

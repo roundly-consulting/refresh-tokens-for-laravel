@@ -16,7 +16,7 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * newest active row, or null when the id is malformed, names no live family, or
  * belongs to another owner.
  */
-final class FindSessionAction
+final readonly class FindSessionAction
 {
     public function execute(Authenticatable&Model $owner, string $familyId): ?RefreshToken
     {

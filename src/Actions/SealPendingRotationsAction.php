@@ -30,11 +30,14 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  *
  * Callers seal BEFORE sweeping active rows: a replacement inserted before the seal
  * looks is caught by that sweep, one inserted after it finds its family sealed.
+ *
+ * @internal a building block of the session revokes — reach it through
+ *           `RefreshTokens::sessions($owner)->revoke…()`.
  */
-final class SealPendingRotationsAction
+final readonly class SealPendingRotationsAction
 {
     public function __construct(
-        private readonly AccessTokenRevoker $revoker,
+        private AccessTokenRevoker $revoker,
     ) {}
 
     /**

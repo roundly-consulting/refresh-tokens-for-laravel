@@ -6,7 +6,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
-use RoundlyConsulting\RefreshTokens\Facades\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 use RoundlyConsulting\Testing\Database\DriverMatrix;
@@ -19,7 +19,7 @@ use RoundlyConsulting\Testing\Database\DriverMatrix;
  */
 it('loses the atomic claim when the row is revoked between read and claim', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $new = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
     $claimedAt = now()->subSecond()->startOfSecond();
 
     $raced = false;
@@ -38,7 +38,7 @@ it('loses the atomic claim when the row is revoked between read and claim', func
         ]);
     });
 
-    $result = RefreshToken::redeem($new->plainText);
+    $result = RefreshTokens::redeem($new->plainText);
     $row = $new->token->fresh();
 
     expect($result)->toBeNull()
@@ -53,8 +53,8 @@ it('loses the atomic claim when the row is revoked between read and claim', func
 it('treats a claim lost within the grace window as a benign retry', function (): void {
     config()->set('refresh-tokens.rotation.grace', 60);
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
-    $sibling = RefreshToken::issue($user, new IssueContext(
+    $new = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $sibling = RefreshTokens::issue($user, new IssueContext(
         accessReference: 'acc-b',
         familyId: $new->token->family_id,
     ));
@@ -74,7 +74,7 @@ it('treats a claim lost within the grace window as a benign retry', function ():
         ]);
     });
 
-    $result = RefreshToken::redeem($new->plainText);
+    $result = RefreshTokens::redeem($new->plainText);
 
     // Lost the claim but within grace: null, and the family was NOT revoked.
     expect($result)->toBeNull()
@@ -83,18 +83,18 @@ it('treats a claim lost within the grace window as a benign retry', function ():
 
 it('keeps the one-winner guarantee under owner-type scoping', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    $results = array_map(fn (): mixed => RefreshToken::redeem($new->plainText, User::class), range(1, 5));
+    $results = array_map(fn (): mixed => RefreshTokens::redeem($new->plainText, User::class), range(1, 5));
 
     expect(array_filter($results, fn (mixed $r): bool => $r !== null))->toHaveCount(1);
 });
 
 it('serialises exactly one winner across many redemptions of the same token', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext);
+    $new = RefreshTokens::issue($user, new IssueContext);
 
-    $results = array_map(fn (): mixed => RefreshToken::redeem($new->plainText), range(1, 5));
+    $results = array_map(fn (): mixed => RefreshTokens::redeem($new->plainText), range(1, 5));
     $winners = array_filter($results, fn (mixed $r): bool => $r !== null);
 
     expect($winners)->toHaveCount(1);
@@ -117,7 +117,7 @@ it('serialises exactly one winner across many redemptions of the same token', fu
  *     the suite is actually on.
  *  2. **It never ran the package's code.** It hand-wrote a raw INSERT and two raw
  *     `->update()` calls, so it proved that *Postgres* honours `WHERE revoked_at IS NULL`
- *     — a fact about Postgres, not about refresh-tokens. `RefreshToken::redeem()` was
+ *     — a fact about Postgres, not about refresh-tokens. `RefreshTokens::redeem()` was
  *     never on the pgsql path. This drives the real facade flow, so the claim under test
  *     is the one the package ships.
  *  3. **It was a lane, so only tagged tests met the engine.** Divergence is not
@@ -130,7 +130,7 @@ it('serialises exactly one winner across many redemptions of the same token', fu
  */
 it('lets only one connection win the conditional claim on postgres', function (): void {
     $user = User::factory()->create();
-    $new = RefreshToken::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $new = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
     $claimedAt = now()->subSecond()->startOfSecond();
 
     // A second, independent session against the same database — a real concurrent
@@ -151,7 +151,7 @@ it('lets only one connection win the conditional claim on postgres', function ()
     // claim affects zero rows, so the redemption collapses to null rather than minting a
     // second live token from a token already spent. A double-spend here is two valid
     // sessions from one refresh token.
-    expect(RefreshToken::redeem($new->plainText))->toBeNull();
+    expect(RefreshTokens::redeem($new->plainText))->toBeNull();
 
     // Claimed exactly once, by the winner (its timestamp stands); the strict loser's
     // presentation is reuse, so the row now carries the family's reuse verdict.
