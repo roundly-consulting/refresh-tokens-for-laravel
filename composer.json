@@ -1,6 +1,6 @@
 {
     "name": "roundly-consulting/refresh-tokens-for-laravel",
-    "description": "Opaque, rotating refresh tokens and device sessions for Laravel \u2014 SHA-256 at rest, atomic anti-double-spend rotation, family revocation on reuse. Zero third-party runtime deps.",
+    "description": "Opaque, rotating refresh tokens and device sessions for Laravel — SHA-256 at rest, atomic anti-double-spend rotation, family revocation on reuse. Zero third-party runtime deps.",
     "keywords": [
         "roundly-consulting",
         "laravel",
@@ -26,9 +26,9 @@
         "illuminate/database": "^12.0|^13.0",
         "illuminate/http": "^12.0|^13.0",
         "illuminate/support": "^12.0|^13.0",
-        "roundly-consulting/crypto-for-laravel": "@dev",
-        "roundly-consulting/enums-for-laravel": "@dev",
-        "roundly-consulting/package-toolkit-for-laravel": "@dev"
+        "roundly-consulting/crypto-for-laravel": "^1.0",
+        "roundly-consulting/enums-for-laravel": "^1.0",
+        "roundly-consulting/package-toolkit-for-laravel": "^1.0"
     },
     "require-dev": {
         "larastan/larastan": "^3.0",
@@ -37,58 +37,8 @@
         "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^4.0",
         "phpstan/extension-installer": "^1.4",
-        "roundly-consulting/testing-for-laravel": "@dev"
+        "roundly-consulting/testing-for-laravel": "^1.0"
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../crypto-for-laravel*",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "vcs",
-            "url": "https://github.com/roundly-consulting/crypto-for-laravel",
-            "no-api": true
-        },
-        {
-            "type": "path",
-            "url": "../enums-for-laravel*",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "vcs",
-            "url": "https://github.com/roundly-consulting/enums-for-laravel",
-            "no-api": true
-        },
-        {
-            "type": "path",
-            "url": "../package-toolkit-for-laravel*",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "vcs",
-            "url": "https://github.com/roundly-consulting/package-toolkit-for-laravel",
-            "no-api": true
-        },
-        {
-            "type": "path",
-            "url": "../testing-for-laravel*",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "vcs",
-            "url": "https://github.com/roundly-consulting/testing-for-laravel",
-            "no-api": true
-        }
-    ],
     "autoload": {
         "psr-4": {
             "RoundlyConsulting\\RefreshTokens\\": "src/",
@@ -122,7 +72,5 @@
                 "RefreshTokens": "RoundlyConsulting\\RefreshTokens\\Facades\\RefreshTokens"
             }
         }
-    },
-    "minimum-stability": "dev",
-    "prefer-stable": true
+    }
 }
