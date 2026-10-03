@@ -22,13 +22,6 @@ it('ships exactly the config keys it reads', function (): void {
     expect(__DIR__.'/../../config/refresh-tokens.php')->toSatisfyConfigContract(
         [__DIR__.'/../../src', __DIR__.'/../../database'],
         [
-            // The storage seam (`model`, `table`, `key_type`) is read through
-            // the toolkit's `ModelResolver::for('refresh-tokens.model', …)` / TokenModel
-            // seam rather than a bare `config()` token. Those are real reads that drive the
-            // whole schema, but they are not `config(` calls, so the prefix is what makes
-            // them visible to the scraper.
-            'extraReadPrefixes' => ['refresh-tokens.'],
-
             // Deliberately NO `excludeFromReverse` for the service provider. The old test
             // here excluded it on the grounds that "rendering a key is not applying it" —
             // the reasoning is sound but the remedy is wrong for this provider shape: the
