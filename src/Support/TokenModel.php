@@ -13,11 +13,9 @@ use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
  * The single resolution point for the storage seam: the model configured at
  * `refresh-tokens.model`, the table it lives in, and the owner key's type.
  *
- * The model lookup wraps the toolkit's {@see ModelResolver} (which validates the
- * configured value really is an Eloquent model) and narrows the result to this
- * package's own base class — every call site uses `RefreshToken`'s own API
- * (`isUsable()`, the scopes, the enum casts), so a real model that is not a
- * `RefreshToken` falls back to the packaged one rather than fataling later.
+ * Absent config resolves the packaged model; anything else must be that model or a subclass of
+ * it, or the toolkit's ModelResolver throws InvalidConfigurationException naming the key — a
+ * foreign class is never silently replaced.
  */
 final class TokenModel
 {
@@ -26,9 +24,7 @@ final class TokenModel
      */
     public static function class(): string
     {
-        $model = ModelResolver::for('refresh-tokens.model', RefreshToken::class);
-
-        return is_a($model, RefreshToken::class, true) ? $model : RefreshToken::class;
+        return ModelResolver::for('refresh-tokens.model', RefreshToken::class);
     }
 
     public static function make(): RefreshToken

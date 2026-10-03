@@ -180,12 +180,14 @@ it('throws when the configured model is not a model class', function (): void {
         ->toThrow(InvalidConfigurationException::class);
 });
 
-it('falls back to the packaged model for a real model that is not ours', function (): void {
-    // The toolkit resolver only validates "is a Model" — the package must narrow to
-    // its own base class, because every call site uses RefreshToken's own API.
+it('refuses a foreign model instead of falling back to the packaged one', function (): void {
+    // The toolkit refuses any class that is not the packaged model or a subclass of it.
     config()->set('refresh-tokens.model', User::class);
 
-    expect(TokenModel::class())->toBe(RefreshTokenModel::class);
+    expect(fn (): string => TokenModel::class())->toThrow(
+        InvalidConfigurationException::class,
+        'Configuration value [refresh-tokens.model] must be a class-string of ['.RefreshTokenModel::class.'], ['.User::class.'] given.',
+    );
 });
 
 it('issues via the fluent builder filling ip and user agent from a request', function (): void {
