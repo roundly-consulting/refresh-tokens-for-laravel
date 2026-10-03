@@ -101,21 +101,22 @@ The published `config/refresh-tokens.php`:
 
 | Key | Type | Default | Env | Purpose |
 |---|---|---|---|---|
-| `table` | string | `refresh_tokens` | `REFRESH_TOKENS_TABLE` | Table name. A blank or non-string value throws. |
+| `table` | string | `refresh_tokens` | `REFRESH_TOKENS_TABLE` | Table name. Blank is not set → `refresh_tokens`; a non-string value throws. |
 | `model` | class-string | `RefreshToken::class` | — | Model class; swap for a host subclass. |
-| `device_type_cast` | string | `DeviceType::class` | — | Eloquent cast for the `device_type` column. The packaged `DeviceType` enum (`desktop`/`mobile`/`tablet`/`bot`/`unknown`) by default; set `'string'` (or any Eloquent cast) to store a free-form device name verbatim. A blank or non-string value throws. |
-| `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Primary-key type shared by every owner model, driving the `owner_id` column: `bigint`, `uuid`, or `ulid`. Any other value throws `InvalidConfigurationException`. |
+| `device_type_cast` | string | `DeviceType::class` | — | Eloquent cast for the `device_type` column. The packaged `DeviceType` enum (`desktop`/`mobile`/`tablet`/`bot`/`unknown`) by default; set `'string'` (or any Eloquent cast) to store a free-form device name verbatim. Blank is not set → the enum; a non-string value throws. |
+| `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Primary-key type shared by every owner model, driving the `owner_id` column: `bigint`, `uuid`, or `ulid` (blank is not set → `bigint`). Any other value throws `InvalidConfigurationException`. |
 | `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Default sliding token lifetime per issue/rotation (per-issue override: `IssueContext::$ttl`). At least `1`. |
 | `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Default absolute cap on a session, stored when the family is rooted (per-issue override: `IssueContext::$absoluteTtl`). `0` disables. |
 | `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length in base64url chars (~384 bits at 64). Minimum `32`, maximum `4096` — outside it throws. |
-| `hash.algo` | string | `sha256` | `REFRESH_TOKENS_HASH_ALGO` | At-rest hash algorithm; allowlisted to `sha256`, `sha384`, `sha512` (anything else, blank included, throws). |
-| `hash.key` | ?string | `null` | `REFRESH_TOKENS_HASH_KEY` | Optional HMAC pepper; null or blank = plain hash, a non-string throws. |
+| `hash.algo` | string | `sha256` | `REFRESH_TOKENS_HASH_ALGO` | At-rest hash algorithm; allowlisted to `sha256`, `sha384`, `sha512` (blank is not set → `sha256`; anything else throws). |
+| `hash.key` | ?string | `null` | `REFRESH_TOKENS_HASH_KEY` | Optional HMAC pepper; not set (null or blank) = plain hash, a non-string throws. |
 | `rotation.grace` | int (seconds) | `0` | `REFRESH_TOKENS_ROTATION_GRACE` | Benign single-flight window before a re-presented token counts as reuse. `0` = strict; negative throws. |
 | `prune.after` | int (days) | `30` | `REFRESH_TOKENS_PRUNE_AFTER` | Retention past revoke/expiry before pruning. At least `1` day; below that throws. |
 
 Every integer is read strictly: an int or a canonical integer string (`'30'`, as env values
-arrive). An absent key takes the default above; `'five'`, `'1.5'`, `''` or a value out of range
-throws `InvalidTokenConfigurationException` naming the key — never a silent `0` or default.
+arrive). A key that is not set — absent, `null` or blank (`''`, what `KEY=` in `.env` gives) — takes
+the default above; `'five'`, `'1.5'` or a value out of range throws
+`InvalidTokenConfigurationException` naming the key — never a silent `0` or default.
 
 The package works with **zero** configuration — every key has a sensible env-backed default.
 
