@@ -21,10 +21,10 @@ return [
     // Tokens hang off a polymorphic owner (`owner_type` + `owner_id`), so any
     // Authenticatable Eloquent model — users, clients, admins — can hold sessions in
     // the one table. This is the primary-key type shared by EVERY owner model, driving
-    // the `owner_id` column: `bigint` (auto-incrementing, the default; `id` is accepted
-    // as an alias), `uuid`, or `ulid`. Set it before the first migration. Owner models
-    // with different key types cannot share the table. An unrecognized value falls back
-    // to `bigint` — a typo must never silently reshape (or break) the schema.
+    // the `owner_id` column: `bigint` (auto-incrementing, the default), `uuid`, or
+    // `ulid`. Set it before the first migration. Owner models with different key types
+    // cannot share the table. Any other value throws InvalidConfigurationException — a
+    // typo must never silently reshape the schema.
     'key_type' => env('REFRESH_TOKENS_KEY_TYPE', 'bigint'),
 
     // Token lifetime & shape

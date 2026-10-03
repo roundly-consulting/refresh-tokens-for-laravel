@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 use RoundlyConsulting\RefreshTokens\Support\RefreshTokenBlueprint;
 
 /**
@@ -79,10 +80,13 @@ it('emits the shipped table byte for byte on the bigint default', function (): v
     );
 });
 
-it('falls back to the bigint table for an unrecognized key type', function (): void {
-    migrateForKeyType('id');
-
-    expect(createStatement('refresh_tokens'))->toContain('"owner_id" integer not null');
+it('refuses the pre-toolkit `id` key type instead of reading it as bigint', function (): void {
+    expect(function (): void {
+        migrateForKeyType('id');
+    })->toThrow(
+        InvalidConfigurationException::class,
+        'Configuration value [refresh-tokens.key_type] must be one of [bigint, uuid, ulid] (case-insensitive), [id] given.',
+    );
 });
 
 it('emits a string owner key for uuid and ulid owners', function (string $keyType): void {
@@ -91,11 +95,15 @@ it('emits a string owner key for uuid and ulid owners', function (string $keyTyp
     expect(createStatement('refresh_tokens'))->toContain('"owner_type" varchar not null, "owner_id" varchar not null');
 })->with(['uuid', 'ulid']);
 
-it('falls back to the bigint column for an unrecognized key type', function (): void {
-    // KeyType::fromConfig never throws — a typo must not break the schema.
-    migrateForKeyType('guid');
-
-    expect(createStatement('refresh_tokens'))->toContain('"owner_id" integer not null');
+it('refuses to migrate on an unrecognized key type instead of falling back to bigint', function (): void {
+    // A typo must stop the migration, never silently build a bigint owner key for a
+    // uuid/ulid-keyed host.
+    expect(function (): void {
+        migrateForKeyType('guid');
+    })->toThrow(
+        InvalidConfigurationException::class,
+        'Configuration value [refresh-tokens.key_type] must be one of [bigint, uuid, ulid] (case-insensitive), [guid] given.',
+    );
 });
 
 it('indexes exactly the owner morph, auth and lifecycle columns, for every key type', function (string $keyType): void {

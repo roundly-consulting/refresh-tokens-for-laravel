@@ -57,10 +57,10 @@ final class TokenModel
      * The primary-key type shared by every owner model, driving the `owner_id`
      * column shape.
      *
-     * Misconfiguration never throws: an unrecognized value silently falls back to
-     * bigint, so a one-line env typo can't break the schema. The value `id` — what
-     * this package shipped before it moved onto the toolkit's key type — is still
-     * accepted, as the toolkit keeps it as an alias for `bigint`.
+     * `bigint`, `uuid` or `ulid` (case-insensitive); absent or null reads as
+     * `bigint`. Anything else — including `id`, this package's pre-toolkit
+     * spelling — throws the toolkit's `InvalidConfigurationException`, so an env
+     * typo stops the app instead of silently keying a uuid/ulid owner with bigints.
      */
     public static function keyType(): KeyType
     {

@@ -104,7 +104,7 @@ The published `config/refresh-tokens.php`:
 | `table` | string | `refresh_tokens` | `REFRESH_TOKENS_TABLE` | Table name. |
 | `model` | class-string | `RefreshToken::class` | — | Model class; swap for a host subclass. |
 | `device_type_cast` | string | `DeviceType::class` | — | Eloquent cast for the `device_type` column. The packaged `DeviceType` enum (`desktop`/`mobile`/`tablet`/`bot`/`unknown`) by default; set `'string'` (or any Eloquent cast) to store a free-form device name verbatim. An empty value falls back to the enum. |
-| `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Primary-key type shared by every owner model, driving the `owner_id` column: `bigint`, `uuid`, or `ulid`. An unrecognized value falls back to `bigint`. |
+| `key_type` | string | `bigint` | `REFRESH_TOKENS_KEY_TYPE` | Primary-key type shared by every owner model, driving the `owner_id` column: `bigint`, `uuid`, or `ulid`. Any other value throws `InvalidConfigurationException`. |
 | `ttl` | int (seconds) | `2592000` (30 days) | `REFRESH_TOKENS_TTL` | Default sliding token lifetime per issue/rotation (per-issue override: `IssueContext::$ttl`). |
 | `absolute_ttl` | int (seconds) | `7776000` (90 days) | `REFRESH_TOKENS_ABSOLUTE_TTL` | Default absolute cap on a session, stored when the family is rooted (per-issue override: `IssueContext::$absoluteTtl`). `0` disables. |
 | `token_length` | int | `64` | `REFRESH_TOKENS_LENGTH` | Plaintext length in base64url chars (~384 bits at 64). Minimum `32`, maximum `4096` — outside it throws. |
@@ -147,9 +147,10 @@ migration** to `uuid` or `ulid` for non-integer keys; the default `bigint` creat
 integer column. All owner models must share that key type — a bigint `User` and a uuid
 `Client` cannot share one table.
 
-Unlike the two keys above, an **unrecognized `key_type` does not throw** — it falls back to
-`bigint`. Schema shape is not a security boundary, and a one-line env typo must never leave a host
-unable to migrate.
+Like the two keys above, an **unrecognized `key_type` throws** `InvalidConfigurationException`,
+naming the key and the value. A typo such as `guid` would otherwise build a bigint `owner_id`
+for uuid/ulid owners, and nothing would fail until rows stopped joining. `id`, this package's
+spelling before it adopted the shared key type, is no longer accepted: use `bigint`.
 
 ```dotenv
 REFRESH_TOKENS_KEY_TYPE=ulid

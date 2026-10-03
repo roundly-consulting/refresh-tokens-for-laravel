@@ -113,21 +113,32 @@ it('resolves the configured key type', function (string $value, KeyType $type): 
 
     expect(TokenModel::keyType())->toBe($type);
 })->with([
-    // `id` is the value this package shipped before the toolkit's KeyType; the
-    // toolkit keeps it as an alias for bigint, so an existing host env keeps working.
-    ['id', KeyType::BigInt],
     ['bigint', KeyType::BigInt],
     ['uuid', KeyType::Uuid],
     ['ulid', KeyType::Ulid],
 ]);
 
-it('falls back to bigint for an unrecognized or non-string key type', function (mixed $value): void {
-    // Misconfiguration must never break the schema — it silently degrades to the
-    // safe default rather than throwing mid-migration.
-    config()->set('refresh-tokens.key_type', $value);
+it('reads an absent key type as bigint', function (): void {
+    config()->set('refresh-tokens.key_type', null);
 
     expect(TokenModel::keyType())->toBe(KeyType::BigInt);
-})->with(['guid', '', 123, null]);
+});
+
+it('throws on an unrecognized or non-string key type instead of falling back to bigint', function (mixed $value, string $given): void {
+    // A typo must stop the app, never silently key a uuid/ulid owner table with bigints.
+    // `id` (this package's pre-toolkit spelling) is no longer an alias.
+    config()->set('refresh-tokens.key_type', $value);
+
+    expect(fn (): KeyType => TokenModel::keyType())->toThrow(
+        InvalidConfigurationException::class,
+        "Configuration value [refresh-tokens.key_type] must be one of [bigint, uuid, ulid] (case-insensitive), [{$given}] given.",
+    );
+})->with([
+    'the pre-toolkit id' => ['id', 'id'],
+    'a typo' => ['guid', 'guid'],
+    'an empty string' => ['', "''"],
+    'an integer' => [123, '123'],
+]);
 
 it('adds the polymorphic owner columns for every key type', function (KeyType $type): void {
     $table = 'rt_keytype_probe';
