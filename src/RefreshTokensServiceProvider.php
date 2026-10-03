@@ -102,7 +102,8 @@ final class RefreshTokensServiceProvider extends PackageServiceProvider
      */
     private function algorithm(): string
     {
-        $algo = config('refresh-tokens.hash.algo', 'sha256');
+        $algo = config('refresh-tokens.hash.algo');
+        $algo = Settings::notSet($algo) ? 'sha256' : $algo;
 
         return is_string($algo) && in_array($algo, TokenHasher::allowedAlgorithms(), true)
             ? $algo

@@ -72,27 +72,33 @@ it('throws on a non-int length instead of using 64 (strict config)', function (m
 
     expect(fn (): string => (new TokenHasher)->generate())
         ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.token_length');
-})->with(['word' => ['not-an-int'], 'float string' => ['64.5'], 'blank' => [''], 'bool' => [true]]);
+})->with(['word' => ['not-an-int'], 'float string' => ['64.5'], 'bool' => [true]]);
 
-it('reads an env-string length and defaults an absent one (strict config)', function (): void {
+it('reads an env-string length and defaults an absent or blank one (strict config)', function (): void {
     config()->set('refresh-tokens.token_length', '48');
     expect((new TokenHasher)->generate())->toHaveLength(48);
 
     config()->set('refresh-tokens.token_length', null);
     expect((new TokenHasher)->generate())->toHaveLength(64);
+
+    config()->set('refresh-tokens.token_length', '');
+    expect((new TokenHasher)->generate())->toHaveLength(64);
+
+    config()->set('refresh-tokens.token_length', '  ');
+    expect((new TokenHasher)->generate())->toHaveLength(64);
 });
 
-it('throws on a blank or non-string algo instead of using sha256 (strict config)', function (mixed $algo): void {
+it('throws on a non-string or unknown algo instead of using sha256 (strict config)', function (mixed $algo): void {
     config()->set('refresh-tokens.hash.algo', $algo);
 
     expect(fn (): string => (new TokenHasher)->hash('x'))->toThrow(InvalidTokenConfigurationException::class);
-})->with(['blank' => [''], 'array' => [['sha256']], 'int' => [256]]);
+})->with(['typo' => ['sha265'], 'array' => [['sha256']], 'int' => [256]]);
 
-it('hashes with sha256 when the algo is absent (strict config)', function (): void {
-    config()->set('refresh-tokens.hash.algo', null);
+it('hashes with sha256 when the algo is not set (strict config)', function (mixed $unset): void {
+    config()->set('refresh-tokens.hash.algo', $unset);
 
     expect((new TokenHasher)->hash('x'))->toBe(hash('sha256', 'x'));
-});
+})->with(['null' => [null], 'blank' => [''], 'whitespace' => ['  ']]);
 
 it('throws on a non-string pepper instead of dropping it (strict config)', function (): void {
     config()->set('refresh-tokens.hash.key', ['pepper']);
@@ -147,11 +153,11 @@ it('resolves the configured key type', function (string $value, KeyType $type): 
     ['ulid', KeyType::Ulid],
 ]);
 
-it('reads an absent key type as bigint', function (): void {
-    config()->set('refresh-tokens.key_type', null);
+it('reads an absent or blank key type as bigint', function (mixed $unset): void {
+    config()->set('refresh-tokens.key_type', $unset);
 
     expect(TokenModel::keyType())->toBe(KeyType::BigInt);
-});
+})->with(['null' => [null], 'blank' => [''], 'whitespace' => ['  ']]);
 
 it('throws on an unrecognized or non-string key type instead of falling back to bigint', function (mixed $value, string $given): void {
     // A typo must stop the app, never silently key a uuid/ulid owner table with bigints.
@@ -165,7 +171,6 @@ it('throws on an unrecognized or non-string key type instead of falling back to 
 })->with([
     'the pre-toolkit id' => ['id', 'id'],
     'a typo' => ['guid', 'guid'],
-    'an empty string' => ['', "''"],
     'an integer' => [123, '123'],
 ]);
 
@@ -201,25 +206,31 @@ it('resolves the configured model class and table', function (): void {
     expect(TokenModel::table())->toBe('refresh_tokens');
 });
 
-it('throws on a blank or non-string table (strict config)', function (mixed $table): void {
+it('throws on a non-string table (strict config)', function (mixed $table): void {
     config()->set('refresh-tokens.table', $table);
 
     expect(fn (): string => TokenModel::table())
         ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.table');
-})->with(['blank' => [''], 'array' => [['tokens']]]);
+})->with(['array' => [['tokens']], 'int' => [5]]);
 
-it('throws on a blank or non-string device type cast (strict config)', function (mixed $cast): void {
+it('reads a blank table as not set, so refresh_tokens applies (strict config)', function (string $blank): void {
+    config()->set('refresh-tokens.table', $blank);
+
+    expect(TokenModel::table())->toBe('refresh_tokens');
+})->with(['empty' => [''], 'whitespace' => ['  ']]);
+
+it('throws on a non-string device type cast (strict config)', function (mixed $cast): void {
     config()->set('refresh-tokens.device_type_cast', $cast);
 
     expect(fn (): array => (new RefreshTokenModel)->getCasts())
         ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.device_type_cast');
-})->with(['blank' => [''], 'int' => [1]]);
+})->with(['int' => [1], 'array' => [[DeviceType::class]]]);
 
-it('casts device type with the enum when the cast is absent (strict config)', function (): void {
-    config()->set('refresh-tokens.device_type_cast', null);
+it('casts device type with the enum when the cast is not set (strict config)', function (mixed $unset): void {
+    config()->set('refresh-tokens.device_type_cast', $unset);
 
     expect((new RefreshTokenModel)->getCasts()['device_type'])->toBe(DeviceType::class);
-});
+})->with(['null' => [null], 'blank' => [''], 'whitespace' => [' ']]);
 
 it('reads ttls and the grace window strictly (strict config)', function (string $key, mixed $junk): void {
     config()->set($key, $junk);
@@ -255,6 +266,16 @@ it('reads env-string ttls and defaults absent ones (strict config)', function ()
     expect(Settings::ttl())->toBe(2_592_000)
         ->and(Settings::absoluteTtl())->toBe(7_776_000)
         ->and(RotationGrace::seconds())->toBe(0);
+
+    config()->set('refresh-tokens.ttl', '');
+    config()->set('refresh-tokens.absolute_ttl', ' ');
+    config()->set('refresh-tokens.rotation.grace', '');
+    config()->set('refresh-tokens.prune.after', '');
+
+    expect(Settings::ttl())->toBe(2_592_000)
+        ->and(Settings::absoluteTtl())->toBe(7_776_000)
+        ->and(RotationGrace::seconds())->toBe(0)
+        ->and(PruneWindow::configuredDays())->toBe(PruneWindow::DEFAULT_DAYS);
 });
 
 it('hands raw env strings to the strict readers (strict config)', function (): void {

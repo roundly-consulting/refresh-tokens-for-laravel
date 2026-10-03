@@ -125,6 +125,15 @@ it('reports a missing pepper and a disabled absolute ttl', function (): void {
         ->and($output)->not->toContain('md5');
 });
 
+it('reports a blank algo as the sha256 default in about (strict config)', function (string $blank): void {
+    config()->set('refresh-tokens.hash.algo', $blank);
+
+    Artisan::call('about', ['--only' => 'refresh-tokens']);
+
+    expect(Artisan::output())->toContain('sha256')
+        ->not->toContain('INVALID');
+})->with(['empty' => [''], 'whitespace' => ['  ']]);
+
 it('reports the prune window in about', function (mixed $configured, string $expected): void {
     config()->set('refresh-tokens.prune.after', $configured);
 

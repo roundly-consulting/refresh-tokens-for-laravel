@@ -97,9 +97,10 @@ final class TokenHasher
      */
     private function algo(): HashAlgorithm
     {
-        // Absent reads as sha256; a blank or non-string value is refused like any other
-        // name outside the allowlist, never quietly replaced by the default.
-        $algo = config('refresh-tokens.hash.algo') ?? 'sha256';
+        // Not set (absent, null or blank) reads as sha256; a non-string value is refused
+        // like any other name outside the allowlist, never quietly replaced by the default.
+        $algo = config('refresh-tokens.hash.algo');
+        $algo = Settings::notSet($algo) ? 'sha256' : $algo;
 
         if (! is_string($algo)) {
             throw InvalidTokenConfigurationException::unsupportedAlgorithm(get_debug_type($algo), self::allowedAlgorithms());

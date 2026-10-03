@@ -15,7 +15,7 @@ return [
     // maps its parsed device class to those cases. A host whose device vocabulary is
     // richer/free-form (e.g. a dedicated user-agent service emitting many device names)
     // may set this to `'string'` to store the raw value verbatim. Any Eloquent cast
-    // string is accepted; a blank or non-string value throws.
+    // string is accepted; blank is not set (→ DeviceType), a non-string value throws.
     'device_type_cast' => DeviceType::class,
 
     // Tokens hang off a polymorphic owner (`owner_type` + `owner_id`), so any
@@ -29,8 +29,9 @@ return [
 
     // Token lifetime & shape
     // Integers below are read strictly: an int or a canonical integer string (as env
-    // values arrive); anything else — 'five', '1.5', '' — or a value out of range throws
-    // InvalidTokenConfigurationException instead of becoming 0 or the default.
+    // values arrive); a blank value is not set, so the default applies; anything else —
+    // 'five', '1.5' — or a value out of range throws InvalidTokenConfigurationException
+    // instead of becoming 0 or the default.
     // Both lifetimes are defaults: a single issue may override them through
     // IssueContext `ttl` / `absoluteTtl` (e.g. a per-guard lifetime).
     'ttl' => env('REFRESH_TOKENS_TTL', 2_592_000), // seconds; 30 days (sliding)
