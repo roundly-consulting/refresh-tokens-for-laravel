@@ -18,6 +18,7 @@ use RoundlyConsulting\RefreshTokens\Database\Factories\RefreshTokenFactory;
 use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Support\PruneWindow;
+use RoundlyConsulting\RefreshTokens\Support\Settings;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
@@ -201,13 +202,12 @@ class RefreshToken extends Model
     /**
      * The cast applied to `device_type`. Defaults to the {@see DeviceType} enum; a host
      * with a free-form device vocabulary can set `refresh-tokens.device_type_cast` to
-     * `'string'` (or any Eloquent cast) to store the raw value verbatim.
+     * `'string'` (or any Eloquent cast) to store the raw value verbatim. Absent reads as
+     * the enum; a blank or non-string value throws.
      */
     protected function deviceTypeCast(): string
     {
-        $cast = config('refresh-tokens.device_type_cast', DeviceType::class);
-
-        return is_string($cast) && $cast !== '' ? $cast : DeviceType::class;
+        return Settings::string('refresh-tokens.device_type_cast', config('refresh-tokens.device_type_cast'), DeviceType::class);
     }
 
     /**

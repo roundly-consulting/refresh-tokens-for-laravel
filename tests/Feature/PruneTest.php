@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenReuseDetected;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -67,7 +68,7 @@ it('rejects a non-numeric --days', function (): void {
     $this->artisan('refresh-tokens:prune --days=abc')->assertFailed();
 });
 
-it('floors config-driven retention at one day', function (): void {
+it('refuses a config-driven retention under one day (strict config)', function (): void {
     config()->set('refresh-tokens.prune.after', 0);
     $user = User::factory()->create();
 
@@ -75,8 +76,9 @@ it('floors config-driven retention at one day', function (): void {
     RefreshTokenModel::factory()->forOwner($user)->revoked()->create();
     Carbon::setTestNow();
 
-    // A retention of 0 would delete the 2-hour-old row; the floor keeps it.
-    $this->artisan('refresh-tokens:prune')->assertSuccessful();
+    // A retention of 0 would delete the 2-hour-old row; it is refused, never clamped.
+    expect(fn () => $this->artisan('refresh-tokens:prune')->run())
+        ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.prune.after');
 
     expect(RefreshTokenModel::withTrashed()->count())->toBe(1);
 });
@@ -101,7 +103,7 @@ it('force-deletes via the model prunable query (model:prune)', function (): void
  * replacement survives), and a negative one puts the cutoff in the future and deletes live
  * tokens.
  */
-it('floors the model:prune retention at one day, keeping reuse evidence and live tokens', function (mixed $configured): void {
+it('refuses a sub-floor model:prune retention, keeping reuse evidence and live tokens (strict config)', function (mixed $configured): void {
     config()->set('refresh-tokens.prune.after', $configured);
     $user = User::factory()->create();
 
@@ -109,7 +111,8 @@ it('floors the model:prune retention at one day, keeping reuse evidence and live
     $thief = RefreshTokens::rotate($stolen->plainText);
     Carbon::setTestNow(now()->addSecond());
 
-    $this->artisan('model:prune', ['--model' => [RefreshTokenModel::class]])->assertSuccessful();
+    expect(fn () => $this->artisan('model:prune', ['--model' => [RefreshTokenModel::class]])->run())
+        ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.prune.after');
 
     expect(RefreshTokenModel::withTrashed()->count())->toBe(2);
 
@@ -124,6 +127,7 @@ it('floors the model:prune retention at one day, keeping reuse evidence and live
     'zero' => [0],
     'negative' => [-40],
     'numeric string zero' => ['0'],
+    'junk' => ['soon'],
 ]);
 
 it('reads a numeric-string retention in model:prune like the command does', function (): void {

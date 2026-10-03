@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Support;
 
 use Carbon\CarbonImmutable;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 
 /**
  * The retention window every prune path shares — `RefreshTokens::prune()`, the
@@ -25,19 +26,15 @@ final class PruneWindow
     public const int DEFAULT_DAYS = 30;
 
     /**
-     * The configured `refresh-tokens.prune.after`, clamped to the floor. An integer or a
-     * numeric string (an env value) is read as days; anything else falls back to the
-     * default.
+     * The configured `refresh-tokens.prune.after` in days: an int or a canonical integer
+     * string (an env value), at least the floor. Absent reads as the default; a junk
+     * value or one under the floor throws rather than being clamped or defaulted.
+     *
+     * @throws InvalidTokenConfigurationException
      */
     public static function configuredDays(): int
     {
-        $configured = config('refresh-tokens.prune.after', self::DEFAULT_DAYS);
-
-        if (is_string($configured) && preg_match('/^\s*-?\d+\s*$/', $configured) === 1) {
-            $configured = (int) $configured;
-        }
-
-        return max(self::MINIMUM_DAYS, is_int($configured) ? $configured : self::DEFAULT_DAYS);
+        return Settings::integer('refresh-tokens.prune.after', config('refresh-tokens.prune.after'), self::DEFAULT_DAYS, min: self::MINIMUM_DAYS);
     }
 
     /**

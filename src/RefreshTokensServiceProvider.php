@@ -10,9 +10,11 @@ use RoundlyConsulting\PackageToolkit\Package;
 use RoundlyConsulting\PackageToolkit\PackageServiceProvider;
 use RoundlyConsulting\RefreshTokens\Commands\PruneRefreshTokensCommand;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Support\PruneWindow;
 use RoundlyConsulting\RefreshTokens\Support\RotationGrace;
+use RoundlyConsulting\RefreshTokens\Support\Settings;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
@@ -60,30 +62,37 @@ final class RefreshTokensServiceProvider extends PackageServiceProvider
      */
     private function aboutSection(): array
     {
-        $absolute = $this->seconds('refresh-tokens.absolute_ttl', 7_776_000);
-        $grace = RotationGrace::seconds();
         $revoker = $this->app->make(AccessTokenRevoker::class);
 
         return [
             'Token model' => class_basename(TokenModel::class()),
             'Table' => TokenModel::table() === 'refresh_tokens' ? 'DEFAULT' : 'CUSTOM',
             'Owner' => 'morph ('.TokenModel::keyType()->value.')',
-            'Sliding TTL' => $this->seconds('refresh-tokens.ttl', 2_592_000).'s',
-            'Absolute TTL' => $absolute === 0 ? 'DISABLED' : $absolute.'s',
-            'Token length' => $this->seconds('refresh-tokens.token_length', 64).' chars',
+            'Sliding TTL' => $this->valid(static fn (): string => Settings::ttl().'s'),
+            'Absolute TTL' => $this->valid(static fn (): string => Settings::absoluteTtl() === 0 ? 'DISABLED' : Settings::absoluteTtl().'s'),
+            'Token length' => $this->valid(static fn (): string => Settings::tokenLength().' chars'),
             'Hash algorithm' => $this->algorithm(),
             'Hash pepper' => $this->hasPepper() ? 'SET' : 'MISSING',
-            'Rotation grace' => $grace === 0 ? 'STRICT' : $grace.'s',
-            'Prune after' => PruneWindow::configuredDays().' day(s)',
+            'Rotation grace' => $this->valid(static fn (): string => RotationGrace::seconds() === 0 ? 'STRICT' : RotationGrace::seconds().'s'),
+            'Prune after' => $this->valid(static fn (): string => PruneWindow::configuredDays().' day(s)'),
             'Access-token revoker' => $revoker instanceof NullAccessTokenRevoker ? 'NONE (no-op)' : 'BOUND',
         ];
     }
 
-    private function seconds(string $key, int $default): int
+    /**
+     * A setting rendered through its strict reader — or `INVALID` when that reader
+     * throws: `about` reports a misconfiguration rather than blowing up on it (the
+     * real read paths still throw).
+     *
+     * @param  callable(): string  $render
+     */
+    private function valid(callable $render): string
     {
-        $value = config($key, $default);
-
-        return is_int($value) ? $value : $default;
+        try {
+            return $render();
+        } catch (InvalidTokenConfigurationException) {
+            return 'INVALID';
+        }
     }
 
     /**

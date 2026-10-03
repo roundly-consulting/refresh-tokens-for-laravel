@@ -44,9 +44,7 @@ final class TokenModel
 
     public static function table(): string
     {
-        $table = config('refresh-tokens.table', 'refresh_tokens');
-
-        return is_string($table) && $table !== '' ? $table : 'refresh_tokens';
+        return Settings::string('refresh-tokens.table', config('refresh-tokens.table'), 'refresh_tokens');
     }
 
     /**

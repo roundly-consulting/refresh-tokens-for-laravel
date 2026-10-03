@@ -66,4 +66,13 @@ final class InvalidTokenConfigurationException extends RefreshTokenException
             $minimum,
         ));
     }
+
+    public static function notAString(string $key, mixed $value): self
+    {
+        return new self(sprintf(
+            'refresh-tokens config [%s] must be a non-blank string, %s given.',
+            $key,
+            is_string($value) ? "'{$value}'" : get_debug_type($value),
+        ));
+    }
 }

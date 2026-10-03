@@ -125,15 +125,29 @@ it('reports a missing pepper and a disabled absolute ttl', function (): void {
         ->and($output)->not->toContain('md5');
 });
 
-it('reports the effective, floored prune window in about', function (mixed $configured, string $expected): void {
+it('reports the prune window in about', function (mixed $configured, string $expected): void {
     config()->set('refresh-tokens.prune.after', $configured);
 
     Artisan::call('about', ['--only' => 'refresh-tokens']);
 
     expect(Artisan::output())->toMatch('/Prune after\W+'.preg_quote($expected, '/').'/');
 })->with([
-    'below the floor' => [0, '1 day(s)'],
+    'below the floor' => [0, 'INVALID'],
+    'junk' => ['soon', 'INVALID'],
     'numeric string' => ['7', '7 day(s)'],
+]);
+
+it('reports junk integers as INVALID in about rather than throwing (strict config)', function (string $key, string $row): void {
+    config()->set($key, 'five');
+
+    Artisan::call('about', ['--only' => 'refresh-tokens']);
+
+    expect(Artisan::output())->toMatch('/'.preg_quote($row, '/').'\W+INVALID/');
+})->with([
+    'ttl' => ['refresh-tokens.ttl', 'Sliding TTL'],
+    'absolute ttl' => ['refresh-tokens.absolute_ttl', 'Absolute TTL'],
+    'token length' => ['refresh-tokens.token_length', 'Token length'],
+    'grace' => ['refresh-tokens.rotation.grace', 'Rotation grace'],
 ]);
 
 it('reads a numeric-string rotation grace in about', function (): void {

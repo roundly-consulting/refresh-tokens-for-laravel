@@ -81,7 +81,7 @@ it('refuses an explicit prune window under one day', function (int $days): void 
         ->toThrow(InvalidTokenConfigurationException::class, 'at least 1 day(s)');
 })->with([0, -3]);
 
-it('clamps a configured prune window to one day and tolerates a non-int', function (mixed $configured, int $expected): void {
+it('prunes with a configured window, reading env strings as days', function (mixed $configured, int $expected): void {
     config()->set('refresh-tokens.prune.after', $configured);
     $user = User::factory()->create();
 
@@ -91,8 +91,19 @@ it('clamps a configured prune window to one day and tolerates a non-int', functi
 
     expect(app(PruneRefreshTokensAction::class)->execute())->toBe($expected);
 })->with([
-    'zero clamps to one day' => [0, 2],
-    'negative clamps to one day' => [-40, 2],
+    'one day' => [1, 2],
     'numeric string reads as days' => ['1', 2],
-    'non-int falls back to 30' => ['soon', 1],
+    'absent reads as 30' => [null, 1],
+]);
+
+it('refuses a junk or sub-floor configured prune window (strict config)', function (mixed $configured): void {
+    config()->set('refresh-tokens.prune.after', $configured);
+
+    expect(fn () => app(PruneRefreshTokensAction::class)->execute())
+        ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.prune.after');
+})->with([
+    'zero' => [0],
+    'negative' => [-40],
+    'word' => ['soon'],
+    'float string' => ['1.5'],
 ]);

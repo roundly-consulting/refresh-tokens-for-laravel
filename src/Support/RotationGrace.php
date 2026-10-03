@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Support;
 
 use Carbon\CarbonImmutable;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 
 /**
  * The `refresh-tokens.rotation.grace` window: how long after a rotation a re-presented
@@ -16,18 +17,15 @@ use Carbon\CarbonImmutable;
 final class RotationGrace
 {
     /**
-     * The configured window in seconds; `0` (strict) for a missing, non-numeric or
-     * non-positive value. A numeric string (an env value) is read as seconds.
+     * The configured window in seconds; `0` (strict) when absent. An int or a canonical
+     * integer string (an env value) of 0 or more — anything else throws rather than
+     * silently reading as strict.
+     *
+     * @throws InvalidTokenConfigurationException
      */
     public static function seconds(): int
     {
-        $grace = config('refresh-tokens.rotation.grace', 0);
-
-        if (is_string($grace) && preg_match('/^\s*\d+\s*$/', $grace) === 1) {
-            $grace = (int) $grace;
-        }
-
-        return is_int($grace) && $grace > 0 ? $grace : 0;
+        return Settings::integer('refresh-tokens.rotation.grace', config('refresh-tokens.rotation.grace'), 0, min: 0);
     }
 
     /**

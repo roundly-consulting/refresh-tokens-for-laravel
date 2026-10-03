@@ -16,6 +16,7 @@ use RoundlyConsulting\RefreshTokens\Events\RefreshTokenIssued;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Support\Settings;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
@@ -325,15 +326,11 @@ final readonly class IssueRefreshTokenAction
 
     private function configuredTtl(): int
     {
-        $ttl = config('refresh-tokens.ttl', 2_592_000);
-
-        return is_int($ttl) && $ttl > 0 ? $ttl : 2_592_000;
+        return Settings::ttl();
     }
 
     private function configuredAbsoluteTtl(): int
     {
-        $ttl = config('refresh-tokens.absolute_ttl', 7_776_000);
-
-        return is_int($ttl) && $ttl > 0 ? $ttl : 0;
+        return Settings::absoluteTtl();
     }
 }

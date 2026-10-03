@@ -79,8 +79,7 @@ final class TokenHasher
      */
     private function length(): int
     {
-        $length = config('refresh-tokens.token_length', 64);
-        $length = is_int($length) ? $length : 64;
+        $length = Settings::tokenLength();
 
         if ($length < self::MINIMUM_TOKEN_LENGTH) {
             throw InvalidTokenConfigurationException::tokenLengthTooShort($length, self::MINIMUM_TOKEN_LENGTH);
@@ -98,8 +97,13 @@ final class TokenHasher
      */
     private function algo(): HashAlgorithm
     {
-        $algo = config('refresh-tokens.hash.algo', 'sha256');
-        $algo = is_string($algo) && $algo !== '' ? $algo : 'sha256';
+        // Absent reads as sha256; a blank or non-string value is refused like any other
+        // name outside the allowlist, never quietly replaced by the default.
+        $algo = config('refresh-tokens.hash.algo') ?? 'sha256';
+
+        if (! is_string($algo)) {
+            throw InvalidTokenConfigurationException::unsupportedAlgorithm(get_debug_type($algo), self::allowedAlgorithms());
+        }
 
         $resolved = HashAlgorithm::tryFrom($algo);
 
@@ -114,9 +118,14 @@ final class TokenHasher
     {
         $key = config('refresh-tokens.hash.key');
 
-        // A missing, empty, or whitespace-only key means "no pepper" — fall back to a
-        // plain hash. A real pepper is used verbatim (never trimmed).
-        return is_string($key) && trim($key) !== '' ? $key : null;
+        // A missing, empty, or whitespace-only key means "no pepper" (`REFRESH_TOKENS_HASH_KEY=`
+        // in a .env): a plain hash. A pepper that is not a string at all throws rather than
+        // silently dropping the pepper. A real pepper is used verbatim (never trimmed).
+        if ($key !== null && ! is_string($key)) {
+            throw InvalidTokenConfigurationException::notAString('refresh-tokens.hash.key', $key);
+        }
+
+        return $key !== null && trim($key) !== '' ? $key : null;
     }
 
     /**

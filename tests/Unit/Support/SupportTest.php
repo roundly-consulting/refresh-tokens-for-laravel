@@ -10,11 +10,15 @@ use RoundlyConsulting\PackageToolkit\Enums\KeyType;
 use RoundlyConsulting\PackageToolkit\Exceptions\InvalidConfigurationException;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
+use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Support\NullAccessTokenRevoker;
+use RoundlyConsulting\RefreshTokens\Support\PruneWindow;
 use RoundlyConsulting\RefreshTokens\Support\RefreshTokenBlueprint;
+use RoundlyConsulting\RefreshTokens\Support\RotationGrace;
+use RoundlyConsulting\RefreshTokens\Support\Settings;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
@@ -63,13 +67,38 @@ it('applies an HMAC pepper when hash.key is set', function (): void {
         ->and($hasher->hash('abc'))->not->toBe(hash('sha256', 'abc'));
 });
 
-it('falls back to safe defaults for non-int length and empty algo', function (): void {
-    config()->set('refresh-tokens.token_length', 'not-an-int');
-    config()->set('refresh-tokens.hash.algo', '');
-    $hasher = new TokenHasher;
+it('throws on a non-int length instead of using 64 (strict config)', function (mixed $length): void {
+    config()->set('refresh-tokens.token_length', $length);
 
-    expect($hasher->generate())->toHaveLength(64)
-        ->and($hasher->hash('x'))->toBe(hash('sha256', 'x'));
+    expect(fn (): string => (new TokenHasher)->generate())
+        ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.token_length');
+})->with(['word' => ['not-an-int'], 'float string' => ['64.5'], 'blank' => [''], 'bool' => [true]]);
+
+it('reads an env-string length and defaults an absent one (strict config)', function (): void {
+    config()->set('refresh-tokens.token_length', '48');
+    expect((new TokenHasher)->generate())->toHaveLength(48);
+
+    config()->set('refresh-tokens.token_length', null);
+    expect((new TokenHasher)->generate())->toHaveLength(64);
+});
+
+it('throws on a blank or non-string algo instead of using sha256 (strict config)', function (mixed $algo): void {
+    config()->set('refresh-tokens.hash.algo', $algo);
+
+    expect(fn (): string => (new TokenHasher)->hash('x'))->toThrow(InvalidTokenConfigurationException::class);
+})->with(['blank' => [''], 'array' => [['sha256']], 'int' => [256]]);
+
+it('hashes with sha256 when the algo is absent (strict config)', function (): void {
+    config()->set('refresh-tokens.hash.algo', null);
+
+    expect((new TokenHasher)->hash('x'))->toBe(hash('sha256', 'x'));
+});
+
+it('throws on a non-string pepper instead of dropping it (strict config)', function (): void {
+    config()->set('refresh-tokens.hash.key', ['pepper']);
+
+    expect(fn (): string => (new TokenHasher)->hash('x'))
+        ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.hash.key');
 });
 
 it('rejects a hash algo outside the sha-2 allowlist', function (string $algo): void {
@@ -167,9 +196,86 @@ it('resolves the configured model class and table', function (): void {
         ->and(TokenModel::make())->toBeInstanceOf(RefreshTokenModel::class)
         ->and(TokenModel::table())->toBe('refresh_tokens');
 
-    config()->set('refresh-tokens.table', '');
+    config()->set('refresh-tokens.table', null);
 
     expect(TokenModel::table())->toBe('refresh_tokens');
+});
+
+it('throws on a blank or non-string table (strict config)', function (mixed $table): void {
+    config()->set('refresh-tokens.table', $table);
+
+    expect(fn (): string => TokenModel::table())
+        ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.table');
+})->with(['blank' => [''], 'array' => [['tokens']]]);
+
+it('throws on a blank or non-string device type cast (strict config)', function (mixed $cast): void {
+    config()->set('refresh-tokens.device_type_cast', $cast);
+
+    expect(fn (): array => (new RefreshTokenModel)->getCasts())
+        ->toThrow(InvalidTokenConfigurationException::class, 'refresh-tokens.device_type_cast');
+})->with(['blank' => [''], 'int' => [1]]);
+
+it('casts device type with the enum when the cast is absent (strict config)', function (): void {
+    config()->set('refresh-tokens.device_type_cast', null);
+
+    expect((new RefreshTokenModel)->getCasts()['device_type'])->toBe(DeviceType::class);
+});
+
+it('reads ttls and the grace window strictly (strict config)', function (string $key, mixed $junk): void {
+    config()->set($key, $junk);
+
+    expect(fn (): int => match ($key) {
+        'refresh-tokens.ttl' => Settings::ttl(),
+        'refresh-tokens.absolute_ttl' => Settings::absoluteTtl(),
+        'refresh-tokens.rotation.grace' => RotationGrace::seconds(),
+    })->toThrow(InvalidTokenConfigurationException::class, $key);
+})->with([
+    'ttl junk' => ['refresh-tokens.ttl', 'five'],
+    'ttl zero' => ['refresh-tokens.ttl', 0],
+    'ttl float string' => ['refresh-tokens.ttl', '1.5'],
+    'absolute junk' => ['refresh-tokens.absolute_ttl', '90d'],
+    'absolute negative' => ['refresh-tokens.absolute_ttl', -1],
+    'grace junk' => ['refresh-tokens.rotation.grace', 'soon'],
+    'grace negative' => ['refresh-tokens.rotation.grace', '-5'],
+]);
+
+it('reads env-string ttls and defaults absent ones (strict config)', function (): void {
+    config()->set('refresh-tokens.ttl', '600');
+    config()->set('refresh-tokens.absolute_ttl', '0');
+    config()->set('refresh-tokens.rotation.grace', ' 30 ');
+
+    expect(Settings::ttl())->toBe(600)
+        ->and(Settings::absoluteTtl())->toBe(0)
+        ->and(RotationGrace::seconds())->toBe(30);
+
+    config()->set('refresh-tokens.ttl', null);
+    config()->set('refresh-tokens.absolute_ttl', null);
+    config()->set('refresh-tokens.rotation.grace', null);
+
+    expect(Settings::ttl())->toBe(2_592_000)
+        ->and(Settings::absoluteTtl())->toBe(7_776_000)
+        ->and(RotationGrace::seconds())->toBe(0);
+});
+
+it('hands raw env strings to the strict readers (strict config)', function (): void {
+    $_SERVER['REFRESH_TOKENS_TTL'] = 'five';
+    $_SERVER['REFRESH_TOKENS_PRUNE_AFTER'] = '7';
+
+    try {
+        /** @var array{ttl: mixed, prune: array{after: mixed}} $config */
+        $config = require __DIR__.'/../../../config/refresh-tokens.php';
+    } finally {
+        unset($_SERVER['REFRESH_TOKENS_TTL'], $_SERVER['REFRESH_TOKENS_PRUNE_AFTER']);
+    }
+
+    expect($config['ttl'])->toBe('five')
+        ->and($config['prune']['after'])->toBe('7');
+
+    config()->set('refresh-tokens.ttl', $config['ttl']);
+    config()->set('refresh-tokens.prune.after', $config['prune']['after']);
+
+    expect(fn (): int => Settings::ttl())->toThrow(InvalidTokenConfigurationException::class)
+        ->and(PruneWindow::configuredDays())->toBe(7);
 });
 
 it('throws when the configured model is not a model class', function (): void {

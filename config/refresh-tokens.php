@@ -15,7 +15,7 @@ return [
     // maps its parsed device class to those cases. A host whose device vocabulary is
     // richer/free-form (e.g. a dedicated user-agent service emitting many device names)
     // may set this to `'string'` to store the raw value verbatim. Any Eloquent cast
-    // string is accepted; an empty value falls back to the enum.
+    // string is accepted; a blank or non-string value throws.
     'device_type_cast' => DeviceType::class,
 
     // Tokens hang off a polymorphic owner (`owner_type` + `owner_id`), so any
@@ -28,18 +28,21 @@ return [
     'key_type' => env('REFRESH_TOKENS_KEY_TYPE', 'bigint'),
 
     // Token lifetime & shape
+    // Integers below are read strictly: an int or a canonical integer string (as env
+    // values arrive); anything else — 'five', '1.5', '' — or a value out of range throws
+    // InvalidTokenConfigurationException instead of becoming 0 or the default.
     // Both lifetimes are defaults: a single issue may override them through
     // IssueContext `ttl` / `absoluteTtl` (e.g. a per-guard lifetime).
-    'ttl' => (int) env('REFRESH_TOKENS_TTL', 2_592_000), // seconds; 30 days (sliding)
+    'ttl' => env('REFRESH_TOKENS_TTL', 2_592_000), // seconds; 30 days (sliding)
 
     // Absolute session lifetime cap. When a family is rooted its hard end
     // (`absolute_expires_at` = start + this many seconds) is stored on the row and
     // inherited verbatim by every rotation, which clamps each replacement's expiry to
     // it — a continuously rotated (or stolen-but-active) session cannot live forever.
     // 0 disables the cap.
-    'absolute_ttl' => (int) env('REFRESH_TOKENS_ABSOLUTE_TTL', 7_776_000), // seconds; 90 days
+    'absolute_ttl' => env('REFRESH_TOKENS_ABSOLUTE_TTL', 7_776_000), // seconds; 90 days
 
-    'token_length' => (int) env('REFRESH_TOKENS_LENGTH', 64), // base64url chars (~384 bits); min 32, max 4096
+    'token_length' => env('REFRESH_TOKENS_LENGTH', 64), // base64url chars (~384 bits); min 32, max 4096
 
     // Hashing at rest. SHA-256 by default: the secret already carries ~380 bits of entropy,
     // so a fast, indexed-equality-friendly hash is correct — a slow password hash would add
@@ -61,11 +64,11 @@ return [
     'rotation' => [
         // Seconds a losing concurrent redemption stays benign (single-flight retry) before it
         // counts as reuse. 0 = strict (any post-rotation presentation is treated as reuse).
-        'grace' => (int) env('REFRESH_TOKENS_ROTATION_GRACE', 0),
+        'grace' => env('REFRESH_TOKENS_ROTATION_GRACE', 0),
     ],
 
     // Expiry sweeping (the host schedules the command / model:prune)
     'prune' => [
-        'after' => (int) env('REFRESH_TOKENS_PRUNE_AFTER', 30), // days past revoke/expiry
+        'after' => env('REFRESH_TOKENS_PRUNE_AFTER', 30), // days past revoke/expiry; at least 1
     ],
 ];
