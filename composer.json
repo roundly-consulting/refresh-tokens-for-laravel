@@ -10,7 +10,7 @@
         "auth",
         "security"
     ],
-    "homepage": "https://github.com/roundly-consulting/refresh-tokens-for-laravel",
+    "homepage": "https://roundly-consulting.com/open-source/docs/refresh-tokens-for-laravel",
     "license": "MIT",
     "authors": [
         {
@@ -19,6 +19,9 @@
             "role": "Developer"
         }
     ],
+    "support": {
+        "docs": "https://roundly-consulting.com/open-source/docs/refresh-tokens-for-laravel"
+    },
     "require": {
         "php": "^8.4",
         "illuminate/console": "^12.0|^13.0",
