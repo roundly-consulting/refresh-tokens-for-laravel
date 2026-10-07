@@ -6,6 +6,8 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-07
+
 ### Changed
 
 - **Behaviour change:** `issue()` with `familyId` (and `for($owner)->inFamily(…)->issue()`) refuses a
@@ -16,6 +18,9 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 - Documentation: the README's refresh example minted the new access token before `rotate()`, which
   is the only place the owner becomes known. It now picks the access token's id first, rotates with
   it and mints for `$rotation->user`, and points to `redeem()` → mint → `issue()` for the other order.
+- Documentation: the README hero image uses an absolute URL, so it renders on Packagist and
+  outside GitHub.
+- Maintenance: `composer.json` `homepage` and `support.docs` point at the documentation site.
 
 ### Fixed
 
