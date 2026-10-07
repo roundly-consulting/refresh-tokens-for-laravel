@@ -36,20 +36,17 @@ final readonly class RevokeTokenFamilyAction
 
         // A family caught mid-rotation has no live row: its newest row is claimed by a
         // refresh whose replacement is not inserted yet. That pending row still holds the
-        // session — its access token is live — so it is sealed as reuse first, like any
-        // revoke seals it: its access token denied, its end announced, and it counts
-        // towards the reuse signal. Whether the alert fired used to hinge on whether the
-        // replacement had landed yet. Sealing first also puts the verdict on the family
-        // before the scan below.
+        // session — its access token is live — so it is sealed as reuse, like any revoke
+        // seals it: its access token denied, its end announced, and it counts towards the
+        // reuse signal. Whether the alert fired used to hinge on whether the replacement
+        // had landed yet.
         $revoked = $this->seal->execute($this->lineage($token), RevocationReason::ReuseDetected);
 
-        // The verdict goes on the family BEFORE the scan looks. The family may be
-        // mid-rotation — its newest row claimed by a refresh whose replacement is not
-        // inserted yet — so the scan can find nothing live. Flagging the re-presented row
-        // (when the seal did not already relabel it) first means a replacement inserted before the scan is swept by it, and one
-        // inserted after it sees the flag in its own dead-family check (before and after
-        // its insert). Flagged after the scan instead, a replacement landing in between
-        // passed every check and survived the reuse.
+        // The verdict goes on the family BEFORE the scan looks (the seal above may already
+        // have relabelled the presented row). A replacement inserted before the scan is
+        // swept by it; one inserted after sees the flag in its own dead-family check,
+        // before and after its insert. Flagged after the scan instead, a replacement
+        // landing in between passed every check and survived the reuse.
         TokenModel::query()
             ->whereKey($token->getKey())
             ->where('revoked_reason', RevocationReason::Rotated->value)
