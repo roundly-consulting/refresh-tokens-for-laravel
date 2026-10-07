@@ -117,6 +117,16 @@ final readonly class IssueRefreshTokenAction
         $token->expires_at = $this->expiresAt($now, $context->ttl ?? $this->configuredTtl(), $token->absolute_expires_at);
         $token->save();
 
+        // `family_id` is not unique (a family has many rows), so the pre-insert check and
+        // this insert are separate statements: another issue may have rooted the same id
+        // in between. Any other row of the family means the id was taken — withdraw ours.
+        // Two racing roots may both withdraw; neither can end up sharing a family.
+        if ($newFamilyId !== null && $this->familyHasOtherRows($token)) {
+            $token->forceDelete();
+
+            throw InvalidTokenFamilyException::alreadyExists($newFamilyId);
+        }
+
         // Reuse detection or a revoke may have ended the family between the liveness
         // check and this insert (either ordering of insert-vs-revoke). If so, this
         // replacement must not survive it — revoke it immediately.
@@ -280,6 +290,15 @@ final readonly class IssueRefreshTokenAction
         if (TokenModel::query()->withTrashed()->forFamily($familyId)->exists()) {
             throw InvalidTokenFamilyException::alreadyExists($familyId);
         }
+    }
+
+    private function familyHasOtherRows(RefreshToken $token): bool
+    {
+        return TokenModel::query()
+            ->withTrashed()
+            ->where('family_id', $token->family_id)
+            ->whereKeyNot($token->getKey())
+            ->exists();
     }
 
     private function familyHasReuse(string $familyId): bool

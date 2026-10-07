@@ -27,6 +27,10 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 - `issue()` with `familyId` refuses a family past its absolute lifetime with
   `InvalidTokenFamilyException::expired()`. It used to issue a token that had already expired and
   fire `RefreshTokenIssued` for it.
+- `issue()` with a caller-chosen `newFamilyId` (`startingFamily()`) re-checks the id after its
+  insert: when another issue rooted the same id in between, its row is withdrawn and
+  `InvalidTokenFamilyException::alreadyExists()` is thrown. Two concurrent roots used to share one
+  family across two owners.
 
 ### Security
 

@@ -243,3 +243,39 @@ it('rejects an access reference longer than its column before touching the datab
 
     expect($fits->token->fresh()->access_reference)->toBe(str_repeat('y', 64));
 });
+
+/*
+ * `family_id` is not unique (a family has many rows), so the "is this root id new?" check
+ * and the insert are separate statements. Two owners rooting the same caller-chosen id in
+ * the same instant both passed the check and one family spanned two owners — a reuse in
+ * one lineage then logged the other owner out. The id is re-checked after the insert.
+ */
+it('rejects a caller-chosen family id another owner rooted between its check and its insert', function (): void {
+    Event::fake([RefreshTokenIssued::class]);
+    $alice = User::factory()->create();
+    $bob = User::factory()->create();
+    $sid = (string) Str::uuid();
+
+    $raced = false;
+
+    DB::listen(function (QueryExecuted $query) use (&$raced, $bob, $sid): void {
+        // Right after alice's "is this family new?" check has passed…
+        if ($raced || ! str_contains($query->sql, 'exists') || ! in_array($sid, $query->bindings, true)) {
+            return;
+        }
+
+        $raced = true;
+
+        // …bob roots the very same family id.
+        RefreshTokens::issue($bob, new IssueContext(newFamilyId: $sid));
+    });
+
+    expect(fn () => RefreshTokens::issue($alice, new IssueContext(newFamilyId: $sid)))
+        ->toThrow(InvalidTokenFamilyException::class, 'already exists');
+
+    expect($raced)->toBeTrue()
+        ->and(RefreshTokenModel::withTrashed()->forFamily($sid)->pluck('owner_id')->all())->toBe([$bob->id]);
+
+    Event::assertDispatchedTimes(RefreshTokenIssued::class, 1);
+    Event::assertDispatched(RefreshTokenIssued::class, fn (RefreshTokenIssued $e): bool => $e->ownerId === $bob->id);
+});
