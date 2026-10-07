@@ -34,6 +34,9 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 - Reuse detection, the reuse check an inheriting `issue()` makes, and the in-grace sweep of
   `revoke($plain)` are scoped to the presented token's owner, so a family id that spans two owners
   can no longer let one owner's replay log the other out.
+- **Behaviour change:** `revoke($plain)` with a token that expired unused returns `false` and does
+  nothing, as documented for a session that has already ended. It used to return `true`, dispatch
+  `SessionRevoked` and call the `AccessTokenRevoker` with a stale reference.
 
 ### Security
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
@@ -213,4 +214,34 @@ it('persists the reason given to every revoke verb', function (): void {
         ->and(RefreshTokens::sessions($user)->revokeAll(RevocationReason::AccountDisabled))->toBe(1)
         ->and($others->token->fresh()->revoked_reason)->toBe(RevocationReason::AccountDisabled)
         ->and($user->revokeAllSessions(RevocationReason::Security))->toBe(0);
+});
+
+/*
+ * A token that expired unused ended its session already: revoke($plain) has nothing to end.
+ * It used to claim the row anyway — returning true, dispatching SessionRevoked and denying
+ * a stale access reference — unlike sessions()->revoke(), which only sweeps live rows.
+ */
+it('returns false with no side effects when logging out with an expired token', function (): void {
+    Event::fake([SessionRevoked::class]);
+    $user = User::factory()->create();
+    $expired = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-old', ttl: 3_600));
+
+    Carbon::setTestNow(now()->addDay());
+
+    try {
+        expect(RefreshTokens::revoke($expired->plainText))->toBeFalse();
+
+        $this->spy->assertNothingRevoked();
+        Event::assertNotDispatched(SessionRevoked::class);
+        expect($expired->token->fresh()->revoked_at)->toBeNull()
+            ->and($expired->token->fresh()->revoked_reason)->toBeNull();
+
+        // A live token still ends its session.
+        $live = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-live'));
+
+        expect(RefreshTokens::revoke($live->plainText))->toBeTrue();
+        $this->spy->assertRevoked('acc-live');
+    } finally {
+        Carbon::setTestNow();
+    }
 });

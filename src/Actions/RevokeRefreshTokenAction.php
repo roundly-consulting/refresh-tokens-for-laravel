@@ -27,7 +27,7 @@ use SensitiveParameter;
  * mid-rotation is sealed, so the in-flight replacement is refused.
  *
  * Returns true when the call ended a live session; false for an unknown token or one
- * whose session had already ended (idempotent).
+ * whose session had already ended — revoked, or expired unused (idempotent).
  */
 final readonly class RevokeRefreshTokenAction
 {
@@ -45,6 +45,13 @@ final readonly class RevokeRefreshTokenAction
             ->first();
 
         if ($row === null) {
+            return false;
+        }
+
+        // Expired unused: its session already ended, so there is nothing to end — no
+        // claim, no access-token denial, no event. A spent (rotated) expired token still
+        // takes the path below: its session lives on in the row it was rotated into.
+        if ($row->revoked_at === null && ! $row->expires_at->isFuture()) {
             return false;
         }
 
