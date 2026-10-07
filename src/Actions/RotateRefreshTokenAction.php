@@ -7,7 +7,9 @@ namespace RoundlyConsulting\RefreshTokens\Actions;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationResult;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
+use RoundlyConsulting\RefreshTokens\Support\IssueGuard;
 use SensitiveParameter;
 
 /**
@@ -16,17 +18,27 @@ use SensitiveParameter;
  *
  * Null on a failed redeem (unknown, expired, revoked, race lost) and whenever reuse
  * detection or a revoke ended the family between the redeem and the issue — the
- * redeemed token is spent and there is no live lineage to hand back.
+ * redeemed token is spent and there is no live lineage to hand back. An invalid
+ * context or config throws before the redeem, leaving the presented token usable.
  */
 final readonly class RotateRefreshTokenAction
 {
     public function __construct(
         private RedeemRefreshTokenAction $redeem,
         private IssueRefreshTokenAction $issue,
+        private IssueGuard $guard,
     ) {}
 
+    /**
+     * @throws InvalidTokenConfigurationException on an invalid context or config — raised
+     *                                            before the presented token is spent
+     */
     public function execute(#[SensitiveParameter] string $plain, ?RotationContext $context = null): ?RotationResult
     {
+        // The redeem's claim is never rolled back, so everything the issue would refuse
+        // without a query is refused first: the presented token stays usable.
+        $this->guard->assertCanIssue($context?->ttl, null, $context?->accessReference);
+
         $result = $this->redeem->execute($plain, $context?->ownerType);
 
         if ($result === null) {

@@ -75,9 +75,11 @@ final class TokenHasher
     }
 
     /**
+     * The configured plaintext length (`refresh-tokens.token_length`), bounds-checked.
+     *
      * @throws InvalidTokenConfigurationException when configured outside the bounds
      */
-    private function length(): int
+    public function length(): int
     {
         $length = Settings::tokenLength();
 

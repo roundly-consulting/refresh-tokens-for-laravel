@@ -15,6 +15,7 @@ use RoundlyConsulting\RefreshTokens\Enums\DeviceType;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenIssued;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenRedeemed;
+use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
@@ -289,3 +290,35 @@ it('inherits from the newest family row, not an older one', function (): void {
     expect($second?->newRefreshToken->token->fresh()->meta)->toBe(['v' => 2])
         ->and($explicit->token->fresh()->meta)->toBe(['v' => 2]);
 });
+
+/*
+ * rotate() spends the presented token before it issues the replacement, and that claim is
+ * never rolled back. So every input or config error the issue would raise must surface
+ * BEFORE the claim: otherwise a deterministic caller/config mistake burns the token, the
+ * client's retry counts as reuse, and the user is logged out.
+ */
+it('raises an input or config error before spending the presented token', function (?RotationContext $context, array $config): void {
+    Event::fake([RefreshTokenRedeemed::class]);
+    $user = User::factory()->create();
+    $new = RefreshTokens::issue($user, new IssueContext);
+
+    $valid = config('refresh-tokens');
+    config()->set($config);
+
+    expect(fn () => RefreshTokens::rotate($new->plainText, $context))
+        ->toThrow(InvalidTokenConfigurationException::class);
+
+    expect($new->token->fresh()->revoked_at)->toBeNull();
+    Event::assertNotDispatched(RefreshTokenRedeemed::class);
+
+    // The token is untouched, so the corrected call simply works.
+    config()->set('refresh-tokens', $valid);
+
+    expect(RefreshTokens::rotate($new->plainText))->toBeInstanceOf(RotationResult::class);
+})->with([
+    'ttl 0 in the context' => [new RotationContext(ttl: 0), []],
+    'ttl config not an integer' => [null, ['refresh-tokens.ttl' => 'five']],
+    'absolute_ttl config not an integer' => [null, ['refresh-tokens.absolute_ttl' => 'five']],
+    'token_length config below the minimum' => [null, ['refresh-tokens.token_length' => 10]],
+    'access reference over 64 bytes' => [new RotationContext(accessReference: str_repeat('x', 65)), []],
+]);

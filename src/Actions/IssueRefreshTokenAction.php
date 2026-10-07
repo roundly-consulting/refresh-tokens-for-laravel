@@ -16,7 +16,7 @@ use RoundlyConsulting\RefreshTokens\Events\RefreshTokenIssued;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
-use RoundlyConsulting\RefreshTokens\Support\RefreshTokenBlueprint;
+use RoundlyConsulting\RefreshTokens\Support\IssueGuard;
 use RoundlyConsulting\RefreshTokens\Support\Settings;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
@@ -58,6 +58,7 @@ final readonly class IssueRefreshTokenAction
 
     public function __construct(
         private TokenHasher $hasher,
+        private IssueGuard $guard,
     ) {}
 
     /**
@@ -137,8 +138,8 @@ final readonly class IssueRefreshTokenAction
     }
 
     /**
-     * Pure input checks, run before any query so a bad context never reaches the
-     * database.
+     * Pure input and config checks, run before any query so a bad context never
+     * reaches the database.
      *
      * @throws InvalidTokenFamilyException
      * @throws InvalidTokenConfigurationException
@@ -149,22 +150,7 @@ final readonly class IssueRefreshTokenAction
             throw InvalidTokenFamilyException::ambiguous();
         }
 
-        if ($context->ttl !== null && $context->ttl < 1) {
-            throw InvalidTokenConfigurationException::invalidTtl($context->ttl);
-        }
-
-        if ($context->absoluteTtl !== null && $context->absoluteTtl < 0) {
-            throw InvalidTokenConfigurationException::invalidAbsoluteTtl($context->absoluteTtl);
-        }
-
-        // Bytes, not characters: never more than the column holds on any engine. SQLite
-        // would store a longer one; Postgres and strict MySQL raise a raw QueryException.
-        if ($context->accessReference !== null && strlen($context->accessReference) > RefreshTokenBlueprint::ACCESS_REFERENCE_LENGTH) {
-            throw InvalidTokenConfigurationException::accessReferenceTooLong(
-                strlen($context->accessReference),
-                RefreshTokenBlueprint::ACCESS_REFERENCE_LENGTH,
-            );
-        }
+        $this->guard->assertCanIssue($context->ttl, $context->absoluteTtl, $context->accessReference);
     }
 
     /**

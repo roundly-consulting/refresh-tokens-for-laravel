@@ -11,6 +11,11 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 - `issue()` refuses an `accessReference` longer than the 64-byte `access_reference` column with
   `InvalidTokenConfigurationException`, before any query. SQLite used to store it while
   PostgreSQL and strict MySQL raised a raw `QueryException`.
+- `rotate()` raises input and config errors — a `RotationContext` `ttl` below 1, an
+  `accessReference` over 64 bytes, an invalid `ttl`, `absolute_ttl` or `token_length` config — as
+  `InvalidTokenConfigurationException` before it spends the presented token. It used to claim the
+  token first, so the client's retry counted as reuse and logged the user out. `issue()` now reads
+  the same config before its first query.
 
 ## 1.0.0 - 2026-10-03
 
