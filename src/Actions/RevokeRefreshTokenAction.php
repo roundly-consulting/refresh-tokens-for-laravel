@@ -70,16 +70,18 @@ final readonly class RevokeRefreshTokenAction
     {
         $benign = $row->revoked_at !== null && RotationGrace::covers($row->revoked_at, CarbonImmutable::now());
 
+        // Reuse: the theft response, exactly as a replay at redeem() gets it — it seals a
+        // session caught mid-rotation itself.
+        if (! $benign) {
+            return $this->revokeFamily->execute($row) > 0;
+        }
+
         // Seal first, like every session revoke: a replacement inserted before the seal
         // looks is caught by the sweep below, one inserted after finds its family sealed.
         $sealed = $this->seal->execute(
             TokenModel::query()->forFamily($row->family_id),
-            $benign ? $reason : RevocationReason::ReuseDetected,
+            $reason,
         ) > 0;
-
-        if (! $benign) {
-            return $this->revokeFamily->execute($row) > 0 || $sealed;
-        }
 
         /** @var Collection<int, RefreshToken> $live */
         $live = TokenModel::query()->forFamily($row->family_id)->active()->get();

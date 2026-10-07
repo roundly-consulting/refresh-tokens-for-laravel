@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
+use RoundlyConsulting\RefreshTokens\Events\RefreshTokenReuseDetected;
+use RoundlyConsulting\RefreshTokens\Events\SessionRevoked;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
@@ -15,7 +18,8 @@ use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 beforeEach(function (): void {
-    $this->app->instance(AccessTokenRevoker::class, new FakeAccessTokenRevoker);
+    $this->revoker = new FakeAccessTokenRevoker;
+    $this->app->instance(AccessTokenRevoker::class, $this->revoker);
 });
 
 /**
@@ -176,6 +180,45 @@ it('leaves no live replacement when one lands between the theft scan and its ver
         expect($replacement->token->fresh()->revoked_reason)->toBe(RevocationReason::ReuseDetected);
     }
 });
+
+/*
+ * The theft response closes a session caught mid-rotation like a live one: the pending
+ * row's access token is denied, the session's end is announced, and the reuse signal fires
+ * with that session counted. Whether a replay raised the alert (and cut off the session's
+ * access token) used to depend on whether the legitimate refresh had inserted its
+ * replacement yet. The redeem path and the logout path answer alike.
+ */
+dataset('replay paths', [
+    'redeem()' => [fn (string $plain): bool => RefreshTokens::redeem($plain) === null],
+    'revoke() (logout)' => [fn (string $plain): bool => RefreshTokens::revoke($plain)],
+]);
+
+it('closes a session caught mid-rotation when an older token is replayed', function (Closure $replay): void {
+    Event::fake([RefreshTokenReuseDetected::class, SessionRevoked::class]);
+    $user = User::factory()->create();
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $b = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'))->newRefreshToken;
+    $familyId = $a->token->family_id;
+
+    $inFlight = RefreshTokens::redeem($b->plainText);
+
+    expect($replay($a->plainText))->toBeTrue();
+
+    $this->revoker->assertRevoked('acc-b');
+    $this->revoker->assertRevokedCount(1);
+
+    Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
+    Event::assertDispatched(RefreshTokenReuseDetected::class, fn (RefreshTokenReuseDetected $e): bool => $e->familyId === $familyId
+        && $e->ownerId === $user->id
+        && $e->revokedCount === 1);
+    Event::assertDispatched(SessionRevoked::class, fn (SessionRevoked $e): bool => $e->familyId === $familyId
+        && $e->reason === RevocationReason::ReuseDetected
+        && $e->accessReference === 'acc-b');
+
+    expect($b->token->fresh()->revoked_reason)->toBe(RevocationReason::ReuseDetected)
+        ->and(fn () => RefreshTokens::issue($user, new IssueContext(familyId: $inFlight->familyId)))
+        ->toThrow(InvalidTokenFamilyException::class);
+})->with('replay paths');
 
 it('kills the family when a strict concurrent redemption of the same token loses', function (): void {
     $user = User::factory()->create();

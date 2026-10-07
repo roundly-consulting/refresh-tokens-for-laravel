@@ -14,8 +14,9 @@ use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
- * The theft response: revoke every still-active member of a token's family, deny
- * each live member's access token, and fire the reuse-detected signal once.
+ * The theft response: close the family's session even when it is caught mid-rotation,
+ * revoke every still-active member, deny each member's access token, and fire the
+ * reuse-detected signal once, counting every session it ended.
  *
  * @internal a building block of reuse detection in {@see RedeemRefreshTokenAction} and
  *           {@see RevokeRefreshTokenAction} — never called on its own; reuse is detected by
@@ -25,17 +26,29 @@ final readonly class RevokeTokenFamilyAction
 {
     public function __construct(
         private AccessTokenRevoker $revoker,
+        private SealPendingRotationsAction $seal,
     ) {}
 
     public function execute(RefreshToken $token): int
     {
         $now = CarbonImmutable::now();
-        $revoked = 0;
+
+        // A family caught mid-rotation has no live row: its newest row is claimed by a
+        // refresh whose replacement is not inserted yet. That pending row still holds the
+        // session — its access token is live — so it is sealed as reuse first, like any
+        // revoke seals it: its access token denied, its end announced, and it counts
+        // towards the reuse signal. Whether the alert fired used to hinge on whether the
+        // replacement had landed yet. Sealing first also puts the verdict on the family
+        // before the scan below.
+        $revoked = $this->seal->execute(
+            TokenModel::query()->forFamily($token->family_id),
+            RevocationReason::ReuseDetected,
+        );
 
         // The verdict goes on the family BEFORE the scan looks. The family may be
         // mid-rotation — its newest row claimed by a refresh whose replacement is not
         // inserted yet — so the scan can find nothing live. Flagging the re-presented row
-        // first means a replacement inserted before the scan is swept by it, and one
+        // (when the seal did not already relabel it) first means a replacement inserted before the scan is swept by it, and one
         // inserted after it sees the flag in its own dead-family check (before and after
         // its insert). Flagged after the scan instead, a replacement landing in between
         // passed every check and survived the reuse.
@@ -78,8 +91,8 @@ final readonly class RevokeTokenFamilyAction
             }
         } while ($revokedThisPass > 0);
 
-        // Only signal on a real transition: re-presenting an already-dead token
-        // revokes nothing, so it must not spam host alerting with empty reuse events.
+        // Only signal on a real transition: re-presenting a token of an already-dead
+        // family ends nothing, so it must not spam host alerting with empty reuse events.
         if ($revoked > 0) {
             Event::dispatch(new RefreshTokenReuseDetected(
                 $token->family_id,

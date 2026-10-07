@@ -22,6 +22,14 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 - Reuse detection writes its verdict on the family before it scans for live members. A rotation
   replacement inserted between that scan and the verdict used to pass every family check and
   survive the theft response as a live session until its next refresh.
+- The theft response also closes a session caught mid-rotation (its newest token claimed by a
+  refresh whose replacement is not issued yet): that row is relabelled `ReuseDetected`, its access
+  token is denied through the `AccessTokenRevoker`, and `SessionRevoked` fires. Before, the access
+  token outlived the verdict. The redeem and logout (`revoke($plain)`) paths behave the same.
+- **Event semantics:** `RefreshTokenReuseDetected` now fires for that case too, with the sealed
+  session counted in `revokedCount` (≥ 1). It used to fire only when a live row was revoked, so
+  whether a theft raised an alert depended on timing. A replay into a family that is already over
+  still fires nothing.
 
 ## 1.0.0 - 2026-10-03
 
