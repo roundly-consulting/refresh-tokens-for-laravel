@@ -50,20 +50,27 @@ final class User extends Authenticatable
 }
 ```
 
-Mint your access token first, then issue a refresh token linked to it and rotate it on refresh:
+At login, mint your access token, then issue a refresh token linked to it. On refresh the owner is
+known only once `rotate()` returns, so pick the new access token's id first:
 
 ```php
+use Illuminate\Support\Str;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
 
 $new = RefreshTokens::for($user)->fromRequest($request)->linkedTo($access->jti)->issue();
 $new->plainText;                         // hand to the client ONCE — never stored
 
-$rotation = RefreshTokens::rotate($new->plainText, new RotationContext(accessReference: $newAccess->jti));
-$rotation->newRefreshToken->plainText;   // the replacement; a null result means "log in again"
+$jti = (string) Str::uuid();             // the next access token's id
+$rotation = RefreshTokens::rotate($new->plainText, new RotationContext(accessReference: $jti));
+// null means "log in again"; otherwise mint the access token for $rotation->user with $jti
+$rotation->newRefreshToken->plainText;   // the replacement refresh token
 
 RefreshTokens::rotate($new->plainText);  // null — a replayed token revokes the whole session
 ```
+
+Minting the access token after the redeem instead? Use `redeem()`, then `issue()` into the same
+family — see the docs.
 
 Manage device sessions:
 

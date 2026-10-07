@@ -13,6 +13,9 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
   uncapped family (`absolute_ttl = 0`) used to be resumed with a fresh full TTL, reviving a session
   that `redeem()` and `sessions()` already treated as over. A token just consumed by `redeem()` is
   still inherited, so `redeem()` → mint → `issue(familyId: …)` works as before.
+- Documentation: the README's refresh example minted the new access token before `rotate()`, which
+  is the only place the owner becomes known. It now picks the access token's id first, rotates with
+  it and mints for `$rotation->user`, and points to `redeem()` → mint → `issue()` for the other order.
 
 ### Fixed
 
