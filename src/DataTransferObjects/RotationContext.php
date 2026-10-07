@@ -12,7 +12,8 @@ use SensitiveParameter;
  * consumed); the rest is handed to the replacement's {@see IssueContext}. Device
  * and geo columns, family timestamps and `meta` are always inherited from the
  * redeemed row; `ipAddress`/`userAgent` here replace the inherited values, and
- * `meta` here is merged over the inherited meta (keys here win).
+ * `meta` here is merged over the inherited meta (keys here win). `accessReference`
+ * is at most 64 bytes, like {@see IssueContext::$accessReference}.
  */
 final readonly class RotationContext
 {

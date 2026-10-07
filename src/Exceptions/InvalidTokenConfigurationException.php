@@ -6,8 +6,8 @@ namespace RoundlyConsulting\RefreshTokens\Exceptions;
 
 /**
  * Thrown when a security-relevant config value is unsafe: an unsupported hashing
- * algorithm, a token length outside the bounds, or a per-issue lifetime override
- * out of range. Failing loudly stops a one-line typo from silently degrading the
+ * algorithm, a token length outside the bounds, a per-issue lifetime override
+ * out of range, or an access reference longer than its column. Failing loudly stops a one-line typo from silently degrading the
  * token store.
  */
 final class InvalidTokenConfigurationException extends RefreshTokenException
@@ -55,6 +55,18 @@ final class InvalidTokenConfigurationException extends RefreshTokenException
         return new self(sprintf(
             'refresh-tokens issue absoluteTtl [%d] must be 0 (uncapped) or more seconds.',
             $ttl,
+        ));
+    }
+
+    /**
+     * Only the length is reported — the reference itself is sensitive.
+     */
+    public static function accessReferenceTooLong(int $length, int $maximum): self
+    {
+        return new self(sprintf(
+            'refresh-tokens accessReference [%d bytes] exceeds the %d-byte access_reference column.',
+            $length,
+            $maximum,
         ));
     }
 

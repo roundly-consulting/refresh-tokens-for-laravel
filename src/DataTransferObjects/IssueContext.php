@@ -22,6 +22,8 @@ use SensitiveParameter;
  *   `amr`, `auth_time`, device name). On inherit it is merged over the source
  *   row's meta (keys here win). It is readable by anyone who can read the table
  *   and is serialised with the model: NEVER put secrets in it.
+ * - `accessReference` (e.g. the access token's jti) is at most 64 bytes — the
+ *   column's width; a longer one throws before any query.
  */
 final readonly class IssueContext
 {

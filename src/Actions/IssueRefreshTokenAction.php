@@ -16,6 +16,7 @@ use RoundlyConsulting\RefreshTokens\Events\RefreshTokenIssued;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenConfigurationException;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Support\RefreshTokenBlueprint;
 use RoundlyConsulting\RefreshTokens\Support\Settings;
 use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
 use RoundlyConsulting\RefreshTokens\Support\TokenModel;
@@ -154,6 +155,15 @@ final readonly class IssueRefreshTokenAction
 
         if ($context->absoluteTtl !== null && $context->absoluteTtl < 0) {
             throw InvalidTokenConfigurationException::invalidAbsoluteTtl($context->absoluteTtl);
+        }
+
+        // Bytes, not characters: never more than the column holds on any engine. SQLite
+        // would store a longer one; Postgres and strict MySQL raise a raw QueryException.
+        if ($context->accessReference !== null && strlen($context->accessReference) > RefreshTokenBlueprint::ACCESS_REFERENCE_LENGTH) {
+            throw InvalidTokenConfigurationException::accessReferenceTooLong(
+                strlen($context->accessReference),
+                RefreshTokenBlueprint::ACCESS_REFERENCE_LENGTH,
+            );
         }
     }
 

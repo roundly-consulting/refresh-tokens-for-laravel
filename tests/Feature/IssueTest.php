@@ -219,3 +219,27 @@ it('carries every new option through the fluent builder', function (): void {
         ->and($row->absolute_expires_at?->timestamp - now()->timestamp)->toEqualWithDelta(3600, 5)
         ->and($row->meta)->toBe(['device_name' => 'Pixel']);
 });
+
+/*
+ * `access_reference` is a varchar(64). A longer reference used to reach the INSERT: SQLite
+ * stored it, Postgres and strict MySQL raised a raw QueryException — so a host that stores
+ * a whole JWT as the reference passed its SQLite suite and failed every login in
+ * production. It is refused up front now, before any query, on every driver.
+ */
+it('rejects an access reference longer than its column before touching the database', function (): void {
+    $user = User::factory()->create();
+    $queries = 0;
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        $queries++;
+    });
+
+    expect(fn () => RefreshTokens::issue($user, new IssueContext(accessReference: str_repeat('x', 65))))
+        ->toThrow(InvalidTokenConfigurationException::class, 'accessReference [65 bytes]');
+
+    expect($queries)->toBe(0)
+        ->and(RefreshTokenModel::query()->count())->toBe(0);
+
+    $fits = RefreshTokens::for($user)->linkedTo(str_repeat('y', 64))->issue();
+
+    expect($fits->token->fresh()->access_reference)->toBe(str_repeat('y', 64));
+});

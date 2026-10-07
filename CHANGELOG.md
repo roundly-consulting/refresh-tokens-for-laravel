@@ -6,6 +6,12 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- `issue()` refuses an `accessReference` longer than the 64-byte `access_reference` column with
+  `InvalidTokenConfigurationException`, before any query. SQLite used to store it while
+  PostgreSQL and strict MySQL raised a raw `QueryException`.
+
 ## 1.0.0 - 2026-10-03
 
 Initial public release.

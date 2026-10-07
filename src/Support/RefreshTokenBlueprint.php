@@ -20,6 +20,12 @@ use RoundlyConsulting\PackageToolkit\Enums\KeyType;
  */
 final class RefreshTokenBlueprint
 {
+    /**
+     * The width of `access_reference`. `issue()` and `rotate()` refuse a longer
+     * reference before any query, so no engine ever sees one.
+     */
+    public const int ACCESS_REFERENCE_LENGTH = 64;
+
     public static function columns(Blueprint $table, KeyType $keyType = KeyType::BigInt): void
     {
         $table->id();
@@ -28,7 +34,7 @@ final class RefreshTokenBlueprint
         // Auth / rotation core. 128 chars fits the widest allowed digest (sha512 hex).
         $table->string('token_hash', 128)->unique();
         $table->uuid('family_id')->index();
-        $table->string('access_reference', 64)->nullable()->index();
+        $table->string('access_reference', self::ACCESS_REFERENCE_LENGTH)->nullable()->index();
 
         // Device metadata (host-supplied via enrich(), carried forward on rotation).
         $table->text('user_agent')->nullable();
