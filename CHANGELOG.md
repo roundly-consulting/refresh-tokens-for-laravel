@@ -17,6 +17,12 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
   token first, so the client's retry counted as reuse and logged the user out. `issue()` now reads
   the same config before its first query.
 
+### Security
+
+- Reuse detection writes its verdict on the family before it scans for live members. A rotation
+  replacement inserted between that scan and the verdict used to pass every family check and
+  survive the theft response as a live session until its next refresh.
+
 ## 1.0.0 - 2026-10-03
 
 Initial public release.

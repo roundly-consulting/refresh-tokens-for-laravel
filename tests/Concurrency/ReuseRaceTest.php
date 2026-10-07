@@ -131,6 +131,52 @@ it('kills a family whose newest row is mid-rotation when an older token is repla
     expect(RefreshTokenModel::query()->forFamily($a->token->family_id)->active()->exists())->toBeFalse();
 });
 
+/**
+ * Ordering D (the replacement's insert AND its post-insert recheck land between the theft
+ * response's membership snapshot and its verdict): the family is mid-rotation, so the
+ * snapshot finds nothing live. If the verdict is written only after that snapshot, the
+ * replacement passes every check it makes and is never swept — the stolen lineage
+ * survives the reuse. The verdict must be on the family before the scan looks.
+ */
+it('leaves no live replacement when one lands between the theft scan and its verdict', function (): void {
+    $user = User::factory()->create();
+    $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
+    $b = RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-b'))->newRefreshToken;
+
+    // The legitimate holder's refresh has claimed B (redeem → mint → issue)…
+    $inFlight = RefreshTokens::redeem($b->plainText);
+
+    $raced = false;
+    $replacement = null;
+
+    DB::listen(function (QueryExecuted $query) use (&$raced, &$replacement, $user, $inFlight): void {
+        // …and its replacement is issued right after the theft response's membership scan.
+        if ($raced
+            || ! str_starts_with(strtolower($query->sql), 'select')
+            || ! str_contains($query->sql, '"family_id" = ?')
+            || ! str_contains($query->sql, '"revoked_at" is null')) {
+            return;
+        }
+
+        $raced = true;
+
+        try {
+            $replacement = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-c', familyId: $inFlight->familyId));
+        } catch (InvalidTokenFamilyException) {
+            // Refused outright: the verdict was already on the family.
+        }
+    });
+
+    // The thief replays A.
+    expect(RefreshTokens::redeem($a->plainText))->toBeNull()
+        ->and($raced)->toBeTrue()
+        ->and(RefreshTokenModel::query()->forFamily($a->token->family_id)->active()->exists())->toBeFalse();
+
+    if ($replacement !== null) {
+        expect($replacement->token->fresh()->revoked_reason)->toBe(RevocationReason::ReuseDetected);
+    }
+});
+
 it('kills the family when a strict concurrent redemption of the same token loses', function (): void {
     $user = User::factory()->create();
     $a = RefreshTokens::issue($user, new IssueContext(accessReference: 'acc-a'));
