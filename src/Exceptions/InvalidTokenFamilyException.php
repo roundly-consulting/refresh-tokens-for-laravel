@@ -6,10 +6,10 @@ namespace RoundlyConsulting\RefreshTokens\Exceptions;
 
 /**
  * Thrown when an issue is asked to inherit a `familyId` that does not exist for
- * the given owner, or that belongs to a family already killed by reuse detection
- * or ended by a revoke — preventing a graft into another owner's (or a dead)
- * lineage — or to root a
- * `newFamilyId` that is malformed, already taken, or passed alongside `familyId`.
+ * the given owner, or that belongs to a family already killed by reuse detection,
+ * ended by a revoke, or expired — preventing a graft into another owner's (or a
+ * dead) lineage — or to root a `newFamilyId` that is malformed, already taken, or
+ * passed alongside `familyId`.
  */
 final class InvalidTokenFamilyException extends RefreshTokenException
 {
@@ -33,6 +33,14 @@ final class InvalidTokenFamilyException extends RefreshTokenException
     {
         return new self(sprintf(
             'Refresh-token family [%s] was ended by a revoke and cannot be extended.',
+            $familyId,
+        ));
+    }
+
+    public static function expired(string $familyId): self
+    {
+        return new self(sprintf(
+            'Refresh-token family [%s] has expired and cannot be extended.',
             $familyId,
         ));
     }

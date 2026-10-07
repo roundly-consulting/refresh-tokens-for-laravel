@@ -2,18 +2,24 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
+use RoundlyConsulting\RefreshTokens\Events\RefreshTokenIssued;
 use RoundlyConsulting\RefreshTokens\Exceptions\InvalidTokenFamilyException;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
+use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
 beforeEach(function (): void {
     $this->app->instance(AccessTokenRevoker::class, new FakeAccessTokenRevoker);
 });
+
+afterEach(fn () => Carbon::setTestNow());
 
 it('rejects issuing into a family that does not exist', function (): void {
     $user = User::factory()->create();
@@ -95,4 +101,71 @@ it('rejects a well-formed family id that names no family', function (): void {
 
     expect(fn () => RefreshTokens::issue($user, new IssueContext(familyId: (string) Str::uuid())))
         ->toThrow(InvalidTokenFamilyException::class);
+});
+
+/*
+ * An expired family is over everywhere else in the API — redeem() returns null for it and
+ * sessions()->find() cannot see it — so it cannot be inherited either. Before, inheriting
+ * (a) a family past its absolute lifetime minted a token dead from birth, announced by
+ * RefreshTokenIssued; (b) an uncapped family whose newest row expired months ago got a
+ * fresh full-TTL token carrying the old session's meta, reviving a session that had ended.
+ */
+it('refuses to inherit a family past its absolute lifetime', function (): void {
+    config()->set('refresh-tokens.ttl', 3_600);           // 1 h
+    config()->set('refresh-tokens.absolute_ttl', 86_400); // 1 d
+
+    Carbon::setTestNow('2026-01-01 12:00:00');
+    $user = User::factory()->create();
+    $root = RefreshTokens::issue($user, new IssueContext);
+    Event::fake([RefreshTokenIssued::class]);
+
+    Carbon::setTestNow('2026-01-03 12:00:00');
+
+    expect(fn () => RefreshTokens::for($user)->inFamily($root->token->family_id)->issue())
+        ->toThrow(InvalidTokenFamilyException::class, 'has expired');
+
+    expect(RefreshTokenModel::query()->count())->toBe(1);
+    Event::assertNotDispatched(RefreshTokenIssued::class);
+});
+
+it('refuses to revive an uncapped family whose newest token expired', function (): void {
+    config()->set('refresh-tokens.absolute_ttl', 0);
+
+    Carbon::setTestNow('2026-01-01 12:00:00');
+    $user = User::factory()->create();
+    $root = RefreshTokens::issue($user, new IssueContext(meta: ['amr' => ['pwd'], 'auth_time' => 1]));
+    Event::fake([RefreshTokenIssued::class]);
+
+    Carbon::setTestNow('2026-07-01 12:00:00');
+
+    expect(fn () => RefreshTokens::for($user)->inFamily($root->token->family_id)->issue())
+        ->toThrow(InvalidTokenFamilyException::class, 'has expired');
+
+    expect(RefreshTokens::sessions($user)->all())->toBeEmpty()
+        ->and(RefreshTokenModel::query()->count())->toBe(1);
+    Event::assertNotDispatched(RefreshTokenIssued::class);
+});
+
+/*
+ * The redeem → mint access token → issue(familyId) path inherits from the row redeem()
+ * just claimed: revoked as Rotated, and its own sliding expiry may pass during the mint.
+ * That source stays inheritable while the family is inside its absolute lifetime.
+ */
+it('still inherits from a just-redeemed row whose own expiry passed during the mint', function (): void {
+    config()->set('refresh-tokens.ttl', 60);
+    config()->set('refresh-tokens.absolute_ttl', 86_400);
+
+    Carbon::setTestNow('2026-01-01 12:00:00');
+    $user = User::factory()->create();
+    $root = RefreshTokens::issue($user, new IssueContext);
+
+    Carbon::setTestNow('2026-01-01 12:00:30');
+    $redeemed = RefreshTokens::redeem($root->plainText);
+
+    Carbon::setTestNow('2026-01-01 12:02:00'); // the source row expired at 12:01:00
+
+    $next = RefreshTokens::issue($user, new IssueContext(familyId: $redeemed?->familyId));
+
+    expect($next->token->revoked_at)->toBeNull()
+        ->and($next->token->expires_at->toDateTimeString())->toBe('2026-01-01 12:03:00');
 });

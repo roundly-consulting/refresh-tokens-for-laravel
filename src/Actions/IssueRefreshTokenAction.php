@@ -32,9 +32,10 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  *
  * When inheriting a family the action guards the theft response and every logout:
  * the family must exist for the owner and be alive before the insert — not killed by
- * reuse detection, and its newest row not ended by a revoke (a revoke seals a family
- * caught mid-rotation by relabelling that row, see {@see SealPendingRotationsAction})
- * — and, because either can land in the window around the insert, the just-inserted
+ * reuse detection, its newest row not ended by a revoke (a revoke seals a family
+ * caught mid-rotation by relabelling that row, see {@see SealPendingRotationsAction}),
+ * and not expired (past its absolute lifetime, or its newest row expired unused) —
+ * and, because either can land in the window around the insert, the just-inserted
  * row is re-checked and self-revoked if the family has since been killed or sealed,
  * so a rotation replacement can never outlive its family.
  */
@@ -78,7 +79,7 @@ final readonly class IssueRefreshTokenAction
         $newFamilyId = $context->newFamilyId !== null ? strtolower($context->newFamilyId) : null;
 
         $source = $familyId !== null
-            ? $this->inheritanceSource($familyId, $owner)
+            ? $this->inheritanceSource($familyId, $owner, $now)
             : null;
 
         if ($newFamilyId !== null) {
@@ -159,7 +160,7 @@ final readonly class IssueRefreshTokenAction
      *
      * @throws InvalidTokenFamilyException
      */
-    private function inheritanceSource(string $familyId, Authenticatable&Model $owner): RefreshToken
+    private function inheritanceSource(string $familyId, Authenticatable&Model $owner, CarbonImmutable $now): RefreshToken
     {
         // `familyId` is caller-supplied (a public IssueContext parameter) and
         // `family_id` is a **uuid** column, so a malformed value can never name a live
@@ -196,7 +197,28 @@ final readonly class IssueRefreshTokenAction
             throw InvalidTokenFamilyException::ended($familyId);
         }
 
+        if ($this->hasExpired($source, $now)) {
+            throw InvalidTokenFamilyException::expired($familyId);
+        }
+
         return $source;
+    }
+
+    /**
+     * An expired family is over everywhere else in the API (redeem() returns null, the
+     * session lists drop it), so it cannot be inherited either: not past its absolute
+     * lifetime — a child would be dead from birth — and not when its newest row expired
+     * unused, which would revive an ended session with a fresh TTL. A row merely
+     * consumed by a rotation stays inheritable: on the redeem → mint → issue path its own
+     * sliding expiry may pass during the mint.
+     */
+    private function hasExpired(RefreshToken $source, CarbonImmutable $now): bool
+    {
+        if ($source->absolute_expires_at !== null && $source->absolute_expires_at->lessThanOrEqualTo($now)) {
+            return true;
+        }
+
+        return $source->revoked_at === null && $source->expires_at->lessThanOrEqualTo($now);
     }
 
     /**

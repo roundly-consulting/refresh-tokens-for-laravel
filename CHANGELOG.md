@@ -6,6 +6,14 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- **Behaviour change:** `issue()` with `familyId` (and `for($owner)->inFamily(…)->issue()`) refuses a
+  family whose newest token expired unused with `InvalidTokenFamilyException::expired()`. An
+  uncapped family (`absolute_ttl = 0`) used to be resumed with a fresh full TTL, reviving a session
+  that `redeem()` and `sessions()` already treated as over. A token just consumed by `redeem()` is
+  still inherited, so `redeem()` → mint → `issue(familyId: …)` works as before.
+
 ### Fixed
 
 - `issue()` refuses an `accessReference` longer than the 64-byte `access_reference` column with
@@ -16,6 +24,9 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
   `InvalidTokenConfigurationException` before it spends the presented token. It used to claim the
   token first, so the client's retry counted as reuse and logged the user out. `issue()` now reads
   the same config before its first query.
+- `issue()` with `familyId` refuses a family past its absolute lifetime with
+  `InvalidTokenFamilyException::expired()`. It used to issue a token that had already expired and
+  fire `RefreshTokenIssued` for it.
 
 ### Security
 
