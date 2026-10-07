@@ -199,7 +199,7 @@ final readonly class IssueRefreshTokenAction
             throw InvalidTokenFamilyException::unknownForOwner($familyId);
         }
 
-        if ($this->familyHasReuse($familyId)) {
+        if ($this->familyHasReuse($familyId, $source->owner_type, $source->owner_id)) {
             throw InvalidTokenFamilyException::reuseRevoked($familyId);
         }
 
@@ -251,7 +251,7 @@ final readonly class IssueRefreshTokenAction
      */
     private function recheckFamily(RefreshToken $token, RefreshToken $source, CarbonImmutable $now): void
     {
-        if ($this->familyHasReuse($token->family_id)) {
+        if ($this->familyHasReuse($token->family_id, $token->owner_type, $token->owner_id)) {
             $this->selfRevoke($token, $now, RevocationReason::ReuseDetected);
 
             return;
@@ -301,10 +301,17 @@ final readonly class IssueRefreshTokenAction
             ->exists();
     }
 
-    private function familyHasReuse(string $familyId): bool
+    /**
+     * Whether reuse detection killed the owner's lineage in this family. Scoped to the
+     * owner like the theft response itself, so one owner's reuse verdict can never end
+     * another owner's session should a family id span two owners.
+     */
+    private function familyHasReuse(string $familyId, string $ownerType, int|string $ownerId): bool
     {
         return TokenModel::query()
             ->where('family_id', $familyId)
+            ->where('owner_type', $ownerType)
+            ->where('owner_id', $ownerId)
             ->where('revoked_reason', RevocationReason::ReuseDetected->value)
             ->exists();
     }

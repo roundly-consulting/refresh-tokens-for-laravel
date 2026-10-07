@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Actions;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
@@ -78,13 +79,10 @@ final readonly class RevokeRefreshTokenAction
 
         // Seal first, like every session revoke: a replacement inserted before the seal
         // looks is caught by the sweep below, one inserted after finds its family sealed.
-        $sealed = $this->seal->execute(
-            TokenModel::query()->forFamily($row->family_id),
-            $reason,
-        ) > 0;
+        $sealed = $this->seal->execute($this->lineage($row), $reason) > 0;
 
         /** @var Collection<int, RefreshToken> $live */
-        $live = TokenModel::query()->forFamily($row->family_id)->active()->get();
+        $live = $this->lineage($row)->active()->get();
 
         $revoked = $sealed;
 
@@ -93,5 +91,19 @@ final readonly class RevokeRefreshTokenAction
         }
 
         return $revoked;
+    }
+
+    /**
+     * The row's family, scoped to its owner — a logout never reaches another owner's
+     * session, even should a family id span two owners.
+     *
+     * @return Builder<RefreshToken>
+     */
+    private function lineage(RefreshToken $row): Builder
+    {
+        return TokenModel::query()
+            ->forFamily($row->family_id)
+            ->where('owner_type', $row->owner_type)
+            ->where('owner_id', $row->owner_id);
     }
 }

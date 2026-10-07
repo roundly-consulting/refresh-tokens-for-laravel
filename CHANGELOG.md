@@ -31,6 +31,9 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
   insert: when another issue rooted the same id in between, its row is withdrawn and
   `InvalidTokenFamilyException::alreadyExists()` is thrown. Two concurrent roots used to share one
   family across two owners.
+- Reuse detection, the reuse check an inheriting `issue()` makes, and the in-grace sweep of
+  `revoke($plain)` are scoped to the presented token's owner, so a family id that spans two owners
+  can no longer let one owner's replay log the other out.
 
 ### Security
 

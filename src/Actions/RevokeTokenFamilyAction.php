@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace RoundlyConsulting\RefreshTokens\Actions;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\Contracts\AccessTokenRevoker;
@@ -40,10 +41,7 @@ final readonly class RevokeTokenFamilyAction
         // towards the reuse signal. Whether the alert fired used to hinge on whether the
         // replacement had landed yet. Sealing first also puts the verdict on the family
         // before the scan below.
-        $revoked = $this->seal->execute(
-            TokenModel::query()->forFamily($token->family_id),
-            RevocationReason::ReuseDetected,
-        );
+        $revoked = $this->seal->execute($this->lineage($token), RevocationReason::ReuseDetected);
 
         // The verdict goes on the family BEFORE the scan looks. The family may be
         // mid-rotation — its newest row claimed by a refresh whose replacement is not
@@ -62,8 +60,7 @@ final readonly class RevokeTokenFamilyAction
         // visible on the next pass and is caught, so no fresh token survives the kill.
         do {
             /** @var Collection<int, RefreshToken> $members */
-            $members = TokenModel::query()
-                ->where('family_id', $token->family_id)
+            $members = $this->lineage($token)
                 ->whereNull('revoked_at')
                 ->get();
 
@@ -103,5 +100,20 @@ final readonly class RevokeTokenFamilyAction
         }
 
         return $revoked;
+    }
+
+    /**
+     * The presented token's family, scoped to its owner: a family belongs to one owner,
+     * and should an id ever span two (rows a host wrote itself, or a pre-fix race), a
+     * replay in one lineage must not end the other owner's session.
+     *
+     * @return Builder<RefreshToken>
+     */
+    private function lineage(RefreshToken $token): Builder
+    {
+        return TokenModel::query()
+            ->forFamily($token->family_id)
+            ->where('owner_type', $token->owner_type)
+            ->where('owner_id', $token->owner_id);
     }
 }

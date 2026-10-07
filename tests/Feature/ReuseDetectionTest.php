@@ -10,6 +10,7 @@ use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Events\RefreshTokenReuseDetected;
 use RoundlyConsulting\RefreshTokens\Facades\RefreshTokens;
+use RoundlyConsulting\RefreshTokens\Models\RefreshToken as RefreshTokenModel;
 use RoundlyConsulting\RefreshTokens\Testing\FakeAccessTokenRevoker;
 use RoundlyConsulting\RefreshTokens\Tests\Fixtures\User;
 
@@ -105,3 +106,32 @@ it('stays benign exactly at the grace boundary and turns to reuse just past it',
     $this->revoker->assertRevoked('acc-b');
     Event::assertDispatchedTimes(RefreshTokenReuseDetected::class, 1);
 });
+
+/*
+ * A family belongs to one owner. Should one id ever span two owners (the `startingFamily()`
+ * race, or rows a host wrote itself), a replay in one owner's lineage must not end the
+ * other owner's session: the theft response, the reuse verdict a later issue checks, and
+ * the in-grace logout sweep are all scoped to the presented token's owner.
+ */
+it('keeps the response to a spent token inside its owner when a family id spans two owners', function (int $grace, Closure $replay): void {
+    config()->set('refresh-tokens.rotation.grace', $grace);
+    $alice = User::factory()->create();
+    $bob = User::factory()->create();
+
+    $a = RefreshTokens::issue($alice, new IssueContext(accessReference: 'acc-a'));
+    RefreshTokens::rotate($a->plainText, new RotationContext(accessReference: 'acc-a2'));
+    $familyId = $a->token->family_id;
+    $bobs = RefreshTokenModel::factory()->forOwner($bob)->forFamily($familyId)->create(['access_reference' => 'acc-bob']);
+
+    $replay($a->plainText);
+
+    $this->revoker->assertRevoked('acc-a2');
+    $this->revoker->assertNotRevoked('acc-bob');
+
+    expect($bobs->fresh()->isUsable())->toBeTrue()
+        ->and(RefreshTokens::issue($bob, new IssueContext(familyId: $familyId))->token->revoked_at)->toBeNull();
+})->with([
+    'replayed at redeem()' => [0, fn (string $plain): mixed => RefreshTokens::redeem($plain)],
+    'logout with the spent token' => [0, fn (string $plain): mixed => RefreshTokens::revoke($plain)],
+    'logout with the spent token within grace' => [30, fn (string $plain): mixed => RefreshTokens::revoke($plain)],
+]);
