@@ -47,16 +47,33 @@ arch('src only uses allowed vendor roots')
     // named here, exactly — nothing else from PHPUnit is permitted.
     ->ignoring('PHPUnit\Framework\Assert');
 
+// Each vendor is named by its real PSR-4 root(s): Pest resolves a name only through an
+// autoload root at or above it. A bare `Doctrine`, `Ramsey`, `Firebase`, `Lcobucci` or
+// `Jenssegers` (packages rooted at `Doctrine\Inflector\`, `Ramsey\Uuid\`, `Firebase\JWT\`, …)
+// matched nothing, and a bare `GuzzleHttp` matched guzzlehttp/guzzle's own classes only —
+// measured: `Ramsey\Uuid\Uuid::uuid4()` and `GuzzleHttp\Psr7\Utils` (both installed through
+// laravel/framework) stayed green.
 arch('no forbidden runtime vendors are imported')
     ->expect([
-        'Doctrine',
+        'Doctrine\DBAL',
+        'Doctrine\ORM',
+        'Doctrine\Persistence',
+        'Doctrine\Common',
+        'Doctrine\Common\Lexer',
+        'Doctrine\Inflector',
+        'Doctrine\Deprecations',
         'GuzzleHttp',
-        'Ramsey',
-        'Firebase',
-        'Lcobucci',
+        'GuzzleHttp\Psr7',
+        'GuzzleHttp\Promise',
+        'GuzzleHttp\UriTemplate',
+        'Ramsey\Uuid',
+        'Ramsey\Collection',
+        'Firebase\JWT',
+        'Lcobucci\JWT',
+        'Lcobucci\Clock',
         'DeviceDetector',
         'WhichBrowser',
-        'Jenssegers',
+        'Jenssegers\Agent',
     ])
     ->not->toBeUsed();
 
@@ -78,9 +95,61 @@ ArchPresets::noLocalCryptoPrimitives('RoundlyConsulting\RefreshTokens');
 
 // Str::random is a general-purpose helper, not a token mint: plaintext secrets
 // come from Crypto\Random\Token so the entropy floor lives in one audited place.
-arch('src never mints a token with Str::random')
-    ->expect('RoundlyConsulting\RefreshTokens')
-    ->not->toUse('Illuminate\Support\Str::random');
+//
+// Read from source tokens: Pest's arch layer matches classes and functions, never a
+// method, so the `->not->toUse('Illuminate\Support\Str::random')` that stood here resolved
+// to nothing and stayed green with `Str::random(40)` in `src/` — measured. `Str` itself is
+// used legitimately (`Str::uuid()`, `Str::isUuid()`), so a class-level ban is no option.
+it('src never mints a token with Str::random', function (): void {
+    $scanned = 0;
+    $offenders = [];
+
+    /** @var SplFileInfo $file */
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator((string) realpath(__DIR__.'/../src'), FilesystemIterator::SKIP_DOTS)) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $scanned++;
+        $code = (string) file_get_contents($file->getPathname());
+        $namespace = preg_match('/^namespace\s+([^;]+);/m', $code, $match) === 1 ? trim($match[1]) : '';
+
+        // alias (lowercased) => imported class, from the top-level `use` imports.
+        $aliases = [];
+        preg_match_all('/^use\s+(?!function\b|const\b)([^;{]+?)(?:\s+as\s+(\w+))?\s*;/m', $code, $imports, PREG_SET_ORDER);
+
+        foreach ($imports as $import) {
+            $class = ltrim(trim($import[1]), '\\');
+            $alias = ($import[2] ?? '') !== '' ? $import[2] : substr((string) strrchr('\\'.$class, '\\'), 1);
+            $aliases[strtolower($alias)] = $class;
+        }
+
+        $tokens = array_values(array_filter(PhpToken::tokenize($code), static fn (PhpToken $token): bool => ! $token->isIgnorable()));
+
+        foreach ($tokens as $i => $token) {
+            if (! $token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED])
+                || ! ($tokens[$i + 1] ?? null)?->is(T_DOUBLE_COLON)
+                || strtolower($tokens[$i + 2]->text ?? '') !== 'random'
+                || ($tokens[$i + 3]->text ?? '') !== '(') {
+                continue;
+            }
+
+            $first = strtolower(explode('\\', $token->text)[0]);
+            $class = match (true) {
+                $token->is(T_NAME_FULLY_QUALIFIED) => ltrim($token->text, '\\'),
+                isset($aliases[$first]) => $aliases[$first].substr($token->text, strlen($first)),
+                default => ltrim($namespace.'\\'.$token->text, '\\'),
+            };
+
+            if (strtolower($class) === 'illuminate\\support\\str') {
+                $offenders[] = $file->getFilename().':'.$token->line;
+            }
+        }
+    }
+
+    expect($scanned)->toBeGreaterThan(0)
+        ->and($offenders)->toBe([]);
+});
 
 // Only crypto's PUBLIC surface is ours to use: whatever crypto tags `@internal`
 // today or tomorrow, this package must not import it, so an internal refactor of
