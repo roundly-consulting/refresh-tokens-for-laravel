@@ -7,6 +7,7 @@ namespace RoundlyConsulting\RefreshTokens\Facades;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Facade;
+use RoundlyConsulting\PackageToolkit\Concerns\RedactsSensitiveArguments;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
@@ -34,6 +35,8 @@ use RoundlyConsulting\RefreshTokens\Testing\RefreshTokensFake;
  */
 final class RefreshTokens extends Facade
 {
+    use RedactsSensitiveArguments;
+
     /**
      * Swap the manager for a recording fake. Calls still run for real — tokens are
      * issued, redeemed and revoked in the database — and every one is recorded for

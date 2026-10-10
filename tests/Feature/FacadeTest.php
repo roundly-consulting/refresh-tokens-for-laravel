@@ -38,6 +38,15 @@ it('pins the facade contract', function (): void {
         ->toReachEveryAction(__DIR__.'/../../src/Actions');
 });
 
+/*
+ * A flat call keeps the plaintext refresh token out of the facade's own stack frame. Three root
+ * methods take it as a `#[SensitiveParameter]`: redeem, rotate and revoke ($plain). Harmless
+ * arguments (owner type, rotation context, reason) stay visible.
+ */
+it('redacts the plaintext token in flat facade calls', function (): void {
+    expect(RefreshTokens::class)->toRedactSensitiveArguments(methods: 3);
+});
+
 it('is registered under the RefreshTokens alias and never clashes with the model', function (): void {
     $composer = json_decode((string) file_get_contents(__DIR__.'/../../composer.json'), true);
 

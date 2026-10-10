@@ -6,6 +6,12 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 
 ## Unreleased
 
+### Security
+
+- Flat facade calls (`RefreshTokens::redeem()`, `RefreshTokens::rotate()`,
+  `RefreshTokens::revoke()`) no longer leave their `#[SensitiveParameter]` argument (the plaintext
+  refresh token) in the facade's stack frame; package-toolkit `^1.3`.
+
 ## 1.1.0 - 2026-10-07
 
 ### Changed
