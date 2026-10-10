@@ -6,6 +6,14 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 
 ## Unreleased
 
+## 1.1.1 - 2026-10-11
+
+### Changed
+
+- Maintenance: `roundly-consulting/package-toolkit-for-laravel` is now required at `^1.3` (was
+  `^1.0`); the facade fix under Security builds on it, so `composer update` pulls it in. The
+  dev-only `testing-for-laravel` floor is now `^1.2`.
+
 ### Security
 
 - Flat facade calls (`RefreshTokens::redeem()`, `RefreshTokens::rotate()`,
