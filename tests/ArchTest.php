@@ -184,11 +184,10 @@ it('imports no crypto class tagged @internal', function (): void {
     }
 });
 
-arch('src never mints or verifies a jwt')
-    ->expect('RoundlyConsulting\RefreshTokens')
-    ->not->toUse([
-        'RoundlyConsulting\Jwt',
-    ]);
+// src never mints or verifies a jwt. Scanned from source tokens: jwt-for-laravel is not
+// installed here, so the `->not->toUse('RoundlyConsulting\Jwt')` that stood here never
+// resolved a class to match and could not fail.
+ArchPresets::noVendorNamespace('RoundlyConsulting\Jwt', __DIR__.'/../src');
 
 ArchPresets::strictTypes('RoundlyConsulting\RefreshTokens');
 
