@@ -47,35 +47,15 @@ arch('src only uses allowed vendor roots')
     // named here, exactly — nothing else from PHPUnit is permitted.
     ->ignoring('PHPUnit\Framework\Assert');
 
-// Each vendor is named by its real PSR-4 root(s): Pest resolves a name only through an
-// autoload root at or above it. A bare `Doctrine`, `Ramsey`, `Firebase`, `Lcobucci` or
-// `Jenssegers` (packages rooted at `Doctrine\Inflector\`, `Ramsey\Uuid\`, `Firebase\JWT\`, …)
-// matched nothing, and a bare `GuzzleHttp` matched guzzlehttp/guzzle's own classes only —
-// measured: `Ramsey\Uuid\Uuid::uuid4()` and `GuzzleHttp\Psr7\Utils` (both installed through
-// laravel/framework) stayed green.
-arch('no forbidden runtime vendors are imported')
-    ->expect([
-        'Doctrine\DBAL',
-        'Doctrine\ORM',
-        'Doctrine\Persistence',
-        'Doctrine\Common',
-        'Doctrine\Common\Lexer',
-        'Doctrine\Inflector',
-        'Doctrine\Deprecations',
-        'GuzzleHttp',
-        'GuzzleHttp\Psr7',
-        'GuzzleHttp\Promise',
-        'GuzzleHttp\UriTemplate',
-        'Ramsey\Uuid',
-        'Ramsey\Collection',
-        'Firebase\JWT',
-        'Lcobucci\JWT',
-        'Lcobucci\Clock',
-        'DeviceDetector',
-        'WhichBrowser',
-        'Jenssegers\Agent',
-    ])
-    ->not->toBeUsed();
+// No third-party runtime vendor, by bare vendor prefix. A source-token scan, so a sibling package
+// under a prefix (`Doctrine\Instantiator` next to `Doctrine\DBAL`, `GuzzleHttp\Psr7` next to guzzle
+// core) and a vendor that is not installed are caught too; the `->not->toBeUsed()` list that stood
+// here resolved only installed PSR-4 roots and missed both. The allow-list above stays: it bans
+// everything else.
+ArchPresets::noVendorNamespace(
+    ['Doctrine', 'GuzzleHttp', 'Ramsey', 'Firebase', 'Lcobucci', 'DeviceDetector', 'WhichBrowser', 'Jenssegers'],
+    __DIR__.'/../src',
+);
 
 /**
  * Every cryptographic primitive comes from crypto-for-laravel — never a third-party
