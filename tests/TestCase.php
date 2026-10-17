@@ -40,4 +40,13 @@ abstract class TestCase extends PackageTestCase
             RefreshTokensServiceProvider::class,
         ];
     }
+
+    /**
+     * Migrate once per worker and reset only the data between tests. The migration reads
+     * config alone (table name, key type), which the schema signature already covers.
+     */
+    protected function keepsMigratedSchema(): bool
+    {
+        return true;
+    }
 }
