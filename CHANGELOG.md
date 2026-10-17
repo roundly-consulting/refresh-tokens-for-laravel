@@ -6,6 +6,10 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Factories build the configured model when a host swaps it.
+
 ## 1.1.2 - 2026-10-11
 
 ### Changed

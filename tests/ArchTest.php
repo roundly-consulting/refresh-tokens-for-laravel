@@ -266,6 +266,12 @@ ArchPresets::swappableModelsAreNotFinal([
  */
 
 /**
+ * The factory half of the seam: RefreshTokenFactory returns `TokenModel::class()` from
+ * `modelName()`, so `RefreshToken::factory()` builds the host's configured subclass.
+ */
+ArchPresets::factoriesResolveThroughSeam(__DIR__.'/../database/factories', __DIR__.'/../src', 'Support');
+
+/**
  * The morph-key seam, guarded — and now guarding a real morph: the owner is polymorphic
  * (`owner_type` + `owner_id`). The migration reaches it through
  * `RefreshTokenBlueprint::columns()` → `morphKey('owner', KeyType::fromConfig(...))`, so the

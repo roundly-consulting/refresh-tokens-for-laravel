@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
+use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 
 /**
  * @extends Factory<RefreshToken>
@@ -18,6 +19,17 @@ use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 class RefreshTokenFactory extends Factory
 {
     protected $model = RefreshToken::class;
+
+    /**
+     * Build the model the host configured in `refresh-tokens.model`, not the packaged one, so a
+     * host subclass comes out of the factory with its own events, observers and table.
+     *
+     * @return class-string<RefreshToken>
+     */
+    public function modelName(): string
+    {
+        return TokenModel::class();
+    }
 
     /**
      * @return array<string, mixed>
