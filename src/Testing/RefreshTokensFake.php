@@ -11,9 +11,11 @@ use Illuminate\Database\Eloquent\Model;
 use PHPUnit\Framework\Assert;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionAttempt;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationResult;
+use RoundlyConsulting\RefreshTokens\Enums\RedemptionFailure;
 use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
 use RoundlyConsulting\RefreshTokens\Models\RefreshToken;
 use RoundlyConsulting\RefreshTokens\RefreshTokensManager;
@@ -59,6 +61,23 @@ final class RefreshTokensFake extends RefreshTokensManager
         $this->record(new RecordedOperation(RecordedOperation::REDEEM, $result?->user, count: $result === null ? 0 : 1));
 
         return $result;
+    }
+
+    /**
+     * Recorded as a redeem, with how it failed (`$failure`).
+     */
+    public function attempt(#[SensitiveParameter] string $plain, ?string $ownerType = null): RedemptionAttempt
+    {
+        $attempt = parent::attempt($plain, $ownerType);
+
+        $this->record(new RecordedOperation(
+            RecordedOperation::REDEEM,
+            $attempt->result?->user,
+            count: $attempt->succeeded() ? 1 : 0,
+            failure: $attempt->failure,
+        ));
+
+        return $attempt;
     }
 
     public function rotate(#[SensitiveParameter] string $plain, ?RotationContext $context = null): ?RotationResult
@@ -160,6 +179,25 @@ final class RefreshTokensFake extends RefreshTokensManager
         $this->assertNone(RecordedOperation::REDEEM, 'redeemed');
     }
 
+    /**
+     * Assert an `attempt()` found its token superseded: rotated moments ago, session alive.
+     */
+    public function assertSuperseded(): void
+    {
+        Assert::assertNotSame(
+            [],
+            $this->superseded(),
+            'Expected a refresh token to be found superseded, but none was.',
+        );
+    }
+
+    public function assertNothingSuperseded(): void
+    {
+        $count = count($this->superseded());
+
+        Assert::assertSame(0, $count, "Expected no refresh token to be found superseded, but {$count} were.");
+    }
+
     public function assertRotated(?Model $for = null): void
     {
         Assert::assertNotSame(
@@ -230,6 +268,17 @@ final class RefreshTokensFake extends RefreshTokensManager
             $this->recorded,
             static fn (RecordedOperation $op): bool => $op->operation === $operation
                 && ($owner === null || $op->isOwnedBy($owner)),
+        ));
+    }
+
+    /**
+     * @return list<RecordedOperation>
+     */
+    private function superseded(): array
+    {
+        return array_values(array_filter(
+            $this->matching(RecordedOperation::REDEEM, null),
+            static fn (RecordedOperation $op): bool => $op->failure === RedemptionFailure::Superseded,
         ));
     }
 

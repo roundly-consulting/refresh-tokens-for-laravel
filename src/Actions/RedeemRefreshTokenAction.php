@@ -4,101 +4,27 @@ declare(strict_types=1);
 
 namespace RoundlyConsulting\RefreshTokens\Actions;
 
-use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Support\Facades\Event;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
-use RoundlyConsulting\RefreshTokens\Enums\RevocationReason;
-use RoundlyConsulting\RefreshTokens\Events\RefreshTokenRedeemed;
-use RoundlyConsulting\RefreshTokens\Support\RotationGrace;
-use RoundlyConsulting\RefreshTokens\Support\TokenHasher;
-use RoundlyConsulting\RefreshTokens\Support\TokenModel;
 use SensitiveParameter;
 
 /**
- * The crown jewel: atomically redeem (rotate) a refresh token with anti-double-spend
- * and reuse detection. Of N concurrent redemptions of the same token, exactly one
- * wins; presenting an already-rotated token revokes the whole family.
- *
- * Failure modes collapse to a single indistinguishable outcome — `null` — so a caller
- * cannot tell unknown from expired from revoked from race-lost.
+ * Atomically redeem (rotate) a refresh token — {@see AttemptRedemptionAction} with every
+ * failure collapsed to `null`, so a caller cannot tell unknown from expired from revoked
+ * from race-lost. Use `RefreshTokens::attempt()` to tell a token rotated moments ago
+ * (its session alive) apart from the rest.
  *
  * Given an `$ownerType` (an owner morph class) the lookup is scoped to it: a token
  * belonging to another owner type is invisible — null, not claimed, no family
- * revoke, no event. Presenting a user's token at a client-only refresh endpoint
- * must neither burn the user's session nor count as reuse.
+ * revoke, no event.
  */
 final readonly class RedeemRefreshTokenAction
 {
     public function __construct(
-        private TokenHasher $hasher,
-        private RevokeTokenFamilyAction $revokeFamily,
+        private AttemptRedemptionAction $attempt,
     ) {}
 
     public function execute(#[SensitiveParameter] string $plain, ?string $ownerType = null): ?RedemptionResult
     {
-        $lookup = TokenModel::query()->where('token_hash', $this->hasher->hash($plain));
-
-        if ($ownerType !== null) {
-            $lookup->where('owner_type', $ownerType);
-        }
-
-        $row = $lookup->first();
-
-        if ($row === null) {
-            return null;
-        }
-
-        $now = CarbonImmutable::now();
-
-        // Not usable: either revoked (a reuse signal unless within grace) or merely
-        // expired (no family revoke — just null).
-        if (! $row->isUsable()) {
-            if ($row->revoked_at !== null && ! RotationGrace::covers($row->revoked_at, $now)) {
-                $this->revokeFamily->execute($row);
-            }
-
-            return null;
-        }
-
-        // Atomic claim: the `WHERE revoked_at IS NULL` predicate is the mutex the DB
-        // serialises — no transaction, no row lock, works on pgsql and sqlite alike.
-        $claimed = TokenModel::query()
-            ->whereKey($row->getKey())
-            ->whereNull('revoked_at')
-            ->update([
-                'revoked_at' => $now,
-                'revoked_reason' => RevocationReason::Rotated->value,
-            ]);
-
-        if ($claimed === 0) {
-            // A concurrent redemption already won the race.
-            $fresh = TokenModel::query()->whereKey($row->getKey())->first();
-
-            if ($fresh !== null && $fresh->revoked_at !== null && RotationGrace::covers($fresh->revoked_at, $now)) {
-                return null; // benign single-flight retry within grace
-            }
-
-            $this->revokeFamily->execute($row);
-
-            return null;
-        }
-
-        // Winner: reflect the claim on the in-memory row.
-        $row->revoked_at = $now;
-        $row->revoked_reason = RevocationReason::Rotated;
-
-        $owner = $row->owner;
-
-        // The row was claimed but its owner is gone (e.g. the owner was deleted after
-        // issue). The token stays revoked; there is nothing to hand back and no
-        // successful-redeem signal to emit.
-        if (! $owner instanceof Authenticatable) {
-            return null;
-        }
-
-        Event::dispatch(new RefreshTokenRedeemed($row->getKey(), $row->family_id, $row->owner_type, $row->owner_id));
-
-        return new RedemptionResult($owner, $row->family_id, $row);
+        return $this->attempt->execute($plain, $ownerType)->result;
     }
 }

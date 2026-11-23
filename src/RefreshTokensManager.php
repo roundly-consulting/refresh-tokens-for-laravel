@@ -7,6 +7,7 @@ namespace RoundlyConsulting\RefreshTokens;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Model;
+use RoundlyConsulting\RefreshTokens\Actions\AttemptRedemptionAction;
 use RoundlyConsulting\RefreshTokens\Actions\IssueRefreshTokenAction;
 use RoundlyConsulting\RefreshTokens\Actions\PruneRefreshTokensAction;
 use RoundlyConsulting\RefreshTokens\Actions\RedeemRefreshTokenAction;
@@ -14,6 +15,7 @@ use RoundlyConsulting\RefreshTokens\Actions\RevokeRefreshTokenAction;
 use RoundlyConsulting\RefreshTokens\Actions\RotateRefreshTokenAction;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionAttempt;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationResult;
@@ -65,6 +67,17 @@ class RefreshTokensManager
     public function redeem(#[SensitiveParameter] string $plain, ?string $ownerType = null): ?RedemptionResult
     {
         return $this->container->make(RedeemRefreshTokenAction::class)->execute($plain, $ownerType);
+    }
+
+    /**
+     * Redeem a token like redeem(), but say how it failed: `Superseded` when it was
+     * rotated moments ago (inside `rotation.grace`) and its session lives on — keep the
+     * newer token instead of signing out — `Refused` for anything else. Same side effects
+     * as redeem().
+     */
+    public function attempt(#[SensitiveParameter] string $plain, ?string $ownerType = null): RedemptionAttempt
+    {
+        return $this->container->make(AttemptRedemptionAction::class)->execute($plain, $ownerType);
     }
 
     /**

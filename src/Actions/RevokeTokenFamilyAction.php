@@ -19,7 +19,7 @@ use RoundlyConsulting\RefreshTokens\Support\TokenModel;
  * revoke every still-active member, deny each member's access token, and fire the
  * reuse-detected signal once, counting every session it ended.
  *
- * @internal a building block of reuse detection in {@see RedeemRefreshTokenAction} and
+ * @internal a building block of reuse detection in {@see AttemptRedemptionAction} and
  *           {@see RevokeRefreshTokenAction} — never called on its own; reuse is detected by
  *           presenting a spent token (to redeem it, or to log out with it).
  */

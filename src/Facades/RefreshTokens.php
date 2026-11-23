@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Facade;
 use RoundlyConsulting\PackageToolkit\Concerns\RedactsSensitiveArguments;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\IssueContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\NewRefreshToken;
+use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionAttempt;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RedemptionResult;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationContext;
 use RoundlyConsulting\RefreshTokens\DataTransferObjects\RotationResult;
@@ -25,6 +26,7 @@ use RoundlyConsulting\RefreshTokens\Testing\RefreshTokensFake;
  * @method static PendingIssue for(Authenticatable&Model $owner)
  * @method static NewRefreshToken issue(Authenticatable&Model $owner, IssueContext $context)
  * @method static RedemptionResult|null redeem(string $plain, ?string $ownerType = null)
+ * @method static RedemptionAttempt attempt(string $plain, ?string $ownerType = null)
  * @method static RotationResult|null rotate(string $plain, ?RotationContext $context = null)
  * @method static bool revoke(string $plain, RevocationReason $reason = RevocationReason::Logout)
  * @method static OwnerSessions sessions(Authenticatable&Model $owner)
