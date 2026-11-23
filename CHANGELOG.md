@@ -6,6 +6,23 @@ All notable changes to `refresh-tokens-for-laravel` are documented in this file.
 
 ## Unreleased
 
+## 2.1.0 - 2026-11-23
+
+### Added
+
+- `RefreshTokens::attempt($plain, ?$ownerType)` (`AttemptRedemptionAction`): redeems exactly like `redeem()`, with
+  the same claim, reuse detection and events, but returns a `RedemptionAttempt` (`?RedemptionResult $result`,
+  `RedemptionFailure $failure`, `succeeded()`, `superseded()`). `RedemptionFailure::Superseded` means the token was
+  rotated inside `rotation.grace` and its session lives on: a late duplicate, or a concurrent refresh that lost the
+  claim. A caller can then keep the newer token instead of signing the user out. Every other failure is
+  `Refused`, including a token revoked by logout or a security response inside the grace, a family revoked in the
+  meantime, an unknown or expired token, and another owner type's token.
+- `RefreshTokens::fake()`: `assertSuperseded()` / `assertNothingSuperseded()`, and `RecordedOperation::$failure`.
+
+### Changed
+
+- `redeem()` now delegates to `attempt()`. Its signature and behaviour are unchanged: `null` on any failure.
+
 ## 2.0.0 - 2026-11-07
 
 ### Changed
